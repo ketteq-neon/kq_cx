@@ -1,0 +1,5 @@
+comment = 'kq_fx_calendar:  Created by pgrx'
+default_version = '@CARGO_VERSION@'
+module_pathname = '$libdir/kq_fx_calendar'
+relocatable = false
+superuser = true

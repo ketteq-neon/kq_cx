@@ -1,0 +1,30 @@
+[package]
+name = "kq_imcx"
+version = "0.0.1"
+edition = "2021"
+publish = false
+authors = [ 'Giancarlo A. Chiappe' ]
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+default = ["pg15"]
+pg15 = ["pgrx/pg15", "pgrx-tests/pg15" ]
+pg16 = ["pgrx/pg16", "pgrx-tests/pg16" ]
+pg_test = []
+
+[dependencies]
+pgrx = "=0.11.4"
+
+[dev-dependencies]
+pgrx-tests = "=0.11.4"
+
+[profile.dev]
+panic = "unwind"
+
+[profile.release]
+panic = "unwind"
+opt-level = 3
+lto = "fat"
+codegen-units = 1
