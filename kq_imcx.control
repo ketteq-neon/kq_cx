@@ -1,0 +1,5 @@
+comment = 'kq_imcx:  ketteQ, Inc.'
+default_version = '@CARGO_VERSION@'
+module_pathname = '$libdir/kq_imcx'
+relocatable = false
+superuser = false
