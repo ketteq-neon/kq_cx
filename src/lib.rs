@@ -36,9 +36,9 @@ type EntriesVec = heapless::Vec<i64, MAX_ENTRIES_PER_CALENDAR>;
 
 type CalendarsVec = heapless::Vec<Calendar, MAX_CALENDARS>;
 
-type CalendarIdIndexMap = heapless::FnvIndexMap<i64, i64, MAX_CALENDARS>;
+type CalendarIdIndexMap = heapless::FnvIndexMap<i64, usize, MAX_CALENDARS>;
 
-type CalendarXuidIndexMap = heapless::FnvIndexMap<&'static str, i64, MAX_CALENDARS>;
+type CalendarNameIndexMap = heapless::FnvIndexMap<&'static str, usize, MAX_CALENDARS>;
 
 // Queries
 
@@ -52,6 +52,7 @@ static Q4_GET_ENTRIES: GucStrSetting = GucStrSetting::new(Some(DEF_Q4_GET_ENTRIE
 
 // Structs
 
+#[derive(Default, Debug)]
 pub struct Calendar {
     calendar_id: i64, // may not be necessary
     dates: EntriesVec,
@@ -66,14 +67,14 @@ unsafe impl PGRXSharedMemory for Calendar {}
 
 static CALENDARS: PgLwLock<CalendarsVec> = PgLwLock::new();
 static CALENDAR_ID_INDEX_MAP: PgLwLock<CalendarIdIndexMap> = PgLwLock::new();
-static CALENDAR_XUID_INDEX_MAP: PgLwLock<CalendarXuidIndexMap> = PgLwLock::new();
+static CALENDAR_NAME_INDEX_MAP: PgLwLock<CalendarNameIndexMap> = PgLwLock::new();
 static CONTROL_CACHE_FILLED: PgLwLock<bool> = PgLwLock::new();
 
 #[pg_guard]
 pub extern "C" fn _PG_init() {
     pg_shmem_init!(CALENDARS);
     pg_shmem_init!(CALENDAR_ID_INDEX_MAP);
-    pg_shmem_init!(CALENDAR_XUID_INDEX_MAP);
+    pg_shmem_init!(CALENDAR_NAME_INDEX_MAP);
     pg_shmem_init!(CONTROL_CACHE_FILLED);
     unsafe {
         init_gucs();
@@ -172,6 +173,48 @@ fn ensure_cache_populated() {
         max_id,
         calendar_count
     );
+    // Load calendars (id, name and entry count)
+    let mut calendar_count: i64 = 0;
+    let mut total_entry_count: i64 = 0;
+    Spi::connect(|client| {
+        let mut calendar_vec = CALENDARS.exclusive();
+        let mut calendar_id_index_map = CALENDAR_ID_INDEX_MAP.exclusive();
+        let mut calendar_name_index_map = CALENDAR_NAME_INDEX_MAP.exclusive();
+        let select = client.select(&get_guc_string(&Q3_GET_CAL_ENTRY_COUNT), None, None);
+        match select {
+            Ok(tuple_table) => {
+                let mut calendar_vec_index: usize = 0;
+                for row in tuple_table {
+                    let id: i64 = row[1].value().unwrap().unwrap();
+                    let name: &str = row[2].value().unwrap().unwrap();
+                    let entry_count: i64 = row[3].value().unwrap().unwrap();
+                    
+                    let new_calendar = Calendar {
+                        calendar_id: id,
+                        ..Calendar::default()
+                    };
+
+                    calendar_id_index_map.insert(id, calendar_vec_index).unwrap();
+                    calendar_name_index_map.insert(name, calendar_vec_index).unwrap();
+                    calendar_vec.insert(calendar_vec_index, new_calendar).unwrap();
+
+                    calendar_vec_index = calendar_vec_index + 1;
+                    calendar_count += 1;
+                    total_entry_count += entry_count;
+                }
+            }
+            Err(spi_error) => {
+                error!("Cannot load currencies. {}", spi_error)
+            }
+        };
+    });
+
+    let mut entry_count: i64 = 0;
+    Spi::connect(|client| {
+        let mut calendar_vec = CALENDARS.exclusive();
+        let calendar_id_index_map = CALENDAR_ID_INDEX_MAP.share().clone();
+
+    });
 }
 
 fn validate_compatible_db() {
@@ -198,7 +241,7 @@ fn kq_invalidate_calendar_cache() -> &'static str {
     debug1!("Waiting for lock...");
     CALENDAR_ID_INDEX_MAP.exclusive().clear();
     debug1!("CALENDAR_ID_INDEX_MAP cleared");
-    CALENDAR_XUID_INDEX_MAP.exclusive().clear();
+    CALENDAR_NAME_INDEX_MAP.exclusive().clear();
     debug1!("CALENDAR_XUID_INDEX_MAP cleared");
     CALENDARS.exclusive().clear();
     debug1!("CALENDARS cleared");
