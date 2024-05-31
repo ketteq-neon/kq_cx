@@ -212,7 +212,8 @@ fn ensure_cache_populated() {
                 // let mut calendar_vec_index: usize = 0;
                 for row in tuple_table {
                     let calendar_id: i64 = row[1].value().unwrap().unwrap();
-                    // let calendar_entry: i32 = row[2].value().unwrap().unwrap();
+                    let calendar_entry: pgrx::Date = row[2].value().unwrap().unwrap();
+                    let calendar_entry = calendar_entry.to_pg_epoch_days();
 
                     if let Some(mut calendar) = calendar_id_map.get_mut(&calendar_id) {
                         calendar.calendar_id = 10;
