@@ -52,7 +52,7 @@ static Q4_GET_ENTRIES: GucStrSetting = GucStrSetting::new(Some(DEF_Q4_GET_ENTRIE
 
 // Structs
 
-#[derive(Default, Debug)]
+#[derive(Default, Clone, Debug)]
 pub struct Calendar {
     calendar_id: i64, // may not be necessary
     dates: EntriesVec,
@@ -203,38 +203,37 @@ fn ensure_cache_populated() {
         };
     });
 
-    // let mut entry_count: i64 = 0;
     Spi::connect(|client| {
         let mut calendar_id_map = CALENDAR_ID_MAP.exclusive();
         let select = client.select(&get_guc_string(&Q4_GET_ENTRIES), None, None);
         match select {
             Ok(tuple_table) => {
-                // let mut calendar_vec_index: usize = 0;
+                let mut current_calendar_id = 0;
+                let mut current_calendar_entries: Vec<i32> = vec!();
+
                 for row in tuple_table {
                     let calendar_id: i64 = row[1].value().unwrap().unwrap();
-                    let calendar_entry: pgrx::Date = row[2].value().unwrap().unwrap();
-                    let calendar_entry = calendar_entry.to_pg_epoch_days();
 
-                    if let Some(mut calendar) = calendar_id_map.get_mut(&calendar_id) {
-                        calendar.calendar_id = 10;
-                        // calendar.dates = EntriesVec::from(calendar..dates);
+                    if current_calendar_id == 0 {
+                        // First loop
+                        current_calendar_id = calendar_id;
                     }
 
-                    // let mut calendar_entries = calendar.dates.clone();
-                    //
-                    //
-                    // let new_calendar = Calendar {
-                    //     dates: calendar_entries,
-                    //     ..calendar
-                    // };
+                    if current_calendar_id != calendar_id {
+                        current_calendar_id = calendar_id;
+                        // Update the Calendar
+                        if let Some(mut calendar) = calendar_id_map.get_mut(&calendar_id) {
+                            debug1!("Loaded {} entries for calendar_id = {}", current_calendar_entries.len(), calendar_id);
+                            calendar.dates.extend_from_slice(&*current_calendar_entries).expect("cannot add entries to calendar");
+                        } else {
+                            error!("cannot add entries: calendar {} not initialized", calendar_id)
+                        }
+                        current_calendar_entries.clear();
+                    }
 
-                    // calendar_id_index_map.insert(id, calendar_vec_index).unwrap();
-                    // calendar_name_index_map.insert(name, calendar_vec_index).unwrap();
-                    // calendar_vec.insert(calendar_vec_index, new_calendar).unwrap();
-                    //
-                    // calendar_vec_index = calendar_vec_index + 1;
-                    // calendar_count += 1;
-                    // total_entry_count += entry_count;
+                    let calendar_entry: pgrx::Date = row[2].value().unwrap().unwrap();
+
+                    current_calendar_entries.push(calendar_entry.to_pg_epoch_days());
                 }
             }
             Err(spi_error) => {
@@ -242,6 +241,8 @@ fn ensure_cache_populated() {
             }
         }
     });
+
+    *CONTROL_CACHE_FILLED.exclusive() = true;
 }
 
 fn validate_compatible_db() {
@@ -278,6 +279,26 @@ fn kq_invalidate_calendar_cache() -> &'static str {
 }
 
 #[pg_extern]
+fn kq_calendar_cache_info() -> TableIterator<
+    'static,
+    (
+        name!(calendar_id, i64),
+        name!(entries, i64),
+    ),
+> {
+    ensure_cache_populated();
+    let result_vec: Vec<(_, _)> = CALENDAR_ID_MAP
+        .share()
+        .iter()
+        .map(|(calendar_id, calendar)| {
+            debug1!("displaying: calendar_id = {}, entries = {}", calendar_id, calendar.dates.len());
+            (*calendar_id, calendar.dates.len() as i64)
+        })
+        .collect();
+    TableIterator::new(result_vec)
+}
+
+#[pg_extern]
 fn hello_kq_fx_calendar() -> &'static str {
     ensure_cache_populated();
     "Hello, kq_imcx"
@@ -292,6 +313,7 @@ mod tests {
 
     #[pg_test]
     fn test_hello_kq_fx_calendar() {
+        crate::kq_calendar_cache_info();
         assert_eq!("Hello, kq_imcx", crate::hello_kq_fx_calendar());
     }
 }
