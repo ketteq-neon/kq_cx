@@ -138,7 +138,7 @@ fn ensure_cache_populated() {
         return;
     }
     validate_compatible_db();
-    // Currency Min and Max ID
+    // Currency Min and Max ID Check
     let currency_min_max: SpiResult<(Option<i64>, Option<i64>)> =
         Spi::get_two(&get_guc_string(&Q2_GET_CALENDAR_IDS));
     let (min_id, max_id): (i64, i64) = match currency_min_max {
@@ -206,6 +206,7 @@ fn ensure_cache_populated() {
         };
     });
     // Fill Cache
+    let mut total_entries: usize = 0;
     Spi::connect(|client| {
         let mut calendar_id_map = CALENDAR_ID_MAP.exclusive();
         let select = client.select(&get_guc_string(&Q4_GET_ENTRIES), None, None);
@@ -231,6 +232,7 @@ fn ensure_cache_populated() {
                         if let Some(mut prev_calendar) = calendar_id_map.get_mut(&prev_calendar_id) {
                             debug1!("Loaded {} entries for calendar_id = {}", current_calendar_entries.len(), prev_calendar_id);
                             prev_calendar.dates.extend_from_slice(&*current_calendar_entries).expect("cannot add entries to calendar");
+                            total_entries += prev_calendar.dates.len();
                         } else {
                             error!("cannot add entries: calendar {} not initialized", prev_calendar_id)
                         }
@@ -245,6 +247,7 @@ fn ensure_cache_populated() {
                 if let Some(mut prev_calendar) = calendar_id_map.get_mut(&prev_calendar_id) {
                     debug1!("Loaded {} entries for calendar_id = {} - Load complete.", current_calendar_entries.len(), prev_calendar_id);
                     prev_calendar.dates.extend_from_slice(&*current_calendar_entries).expect("cannot add entries to calendar");
+                    total_entries += prev_calendar.dates.len();
                 } else {
                     error!("cannot add entries: calendar {} not initialized", prev_calendar_id)
                 }
@@ -254,7 +257,7 @@ fn ensure_cache_populated() {
             }
         }
     });
-
+    debug1!("Entries {total_entries} loaded intro cache, calculating page map...");
     // Page Size init
     {
         let mut calendar_id_map = CALENDAR_ID_MAP.exclusive();
@@ -271,13 +274,13 @@ fn ensure_cache_populated() {
                 let first_page_offset = first_date / page_size_tmp;
 
                 let mut prev_page_index = 0;
-                let mut page_map: Vec<usize> = vec!();
+                let mut page_map: Vec<usize> = vec!(0,);
 
                 for calendar_date_index in 0..calendar.dates.len() {
                     let date = calendar.dates.get(calendar_date_index).unwrap();
                     let page_index = (date / page_size_tmp) - first_page_offset;
                     while prev_page_index < page_index {
-                        prev_page_index = prev_page_index + 1;
+                        prev_page_index += 1;
                         page_map.insert(prev_page_index as usize, calendar_date_index);
                     }
                 }
@@ -299,6 +302,7 @@ fn ensure_cache_populated() {
     *CONTROL_CACHE_FILLED.exclusive() = true;
 }
 
+/// Checks if the schema is compatible with the extension.
 fn validate_compatible_db() {
     let spi_result: SpiResult<Option<bool>> = Spi::get_one(&get_guc_string(&Q1_VALIDATION_QUERY));
     match spi_result {
