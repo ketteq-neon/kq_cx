@@ -396,35 +396,60 @@ fn kq_calendar_cache_info() -> TableIterator<
 fn kq_calendar_info() -> TableIterator<
     'static,
     (
-        name!(property, &'static str),
+        name!(property, String),
         name!(value, String),
     ),
 > {
     let control = CALENDAR_CONTROL.share().clone();
-    let mut data: Vec<(&str, String)> = vec!();
-    data.push(("PostgreSQL SDK Version", pg_sys::PG_VERSION_NUM.to_string()));
-    data.push(("PostgreSQL SDK Build", std::str::from_utf8(pg_sys::PG_VERSION_STR).unwrap().to_string()));
-    data.push(("Extension Version", env!("CARGO_PKG_VERSION").to_string()));
+    let mut data: Vec<(String, String)> = vec!();
+    data.push(("PostgreSQL SDK Version".to_string(), pg_sys::PG_VERSION_NUM.to_string()));
+    data.push(("PostgreSQL SDK Build".to_string(), std::str::from_utf8(pg_sys::PG_VERSION_STR).unwrap().to_string()));
+    data.push(("Extension Version".to_string(), env!("CARGO_PKG_VERSION").to_string()));
     if cfg!(debug_assertions) {
-        data.push(("Extension Build", "Debug".to_string()));
+        data.push(("Extension Build".to_string(), "Debug".to_string()));
     } else {
-        data.push(("Extension Build", "Release".to_string()));
+        data.push(("Extension Build".to_string(), "Release".to_string()));
     }
-    data.push(("Cache Available", control.filled.to_string()));
-    data.push(("Slice Cache Size (Calendar ID Count)", control.calendar_id_count.to_string()));
-    data.push(("Entry Cache Size (Entries)", control.entry_count.to_string()));
-    data.push(("[Q1] Get Calendar IDs", get_guc_string(&Q2_GET_CALENDAR_IDS)));
-    data.push(("[Q2] Get Calendar Entry Count per Calendar ID", get_guc_string(&Q3_GET_CAL_ENTRY_COUNT)));
-    data.push(("[Q3] Get Calendar Entries", get_guc_string(&Q4_GET_ENTRIES)));
+    data.push(("Cache Available".to_string(), control.filled.to_string()));
+    data.push(("Slice Cache Size (Calendar ID Count)".to_string(), control.calendar_id_count.to_string()));
+    data.push(("Entry Cache Size (Entries)".to_string(), control.entry_count.to_string()));
+    data.push(("[Q1] Get Calendar IDs".to_string(), get_guc_string(&Q2_GET_CALENDAR_IDS)));
+    data.push(("[Q2] Get Calendar Entry Count per Calendar ID".to_string(), get_guc_string(&Q3_GET_CAL_ENTRY_COUNT)));
+    data.push(("[Q3] Get Calendar Entries".to_string(), get_guc_string(&Q4_GET_ENTRIES)));
 
     get_calendars_info()
         .iter()
         .for_each(|calendar_info| {
-            data.push((&format!("  Calendar {} ({}) Entries", calendar_info.0, calendar_info.1), format!("{}", calendar_info.2)));
+            data.push((format!("  Calendar {} ({}) Entries", calendar_info.0, calendar_info.1), format!("{}", calendar_info.2)));
         });
 
     TableIterator::new(data)
 }
+
+#[pg_extern]
+fn kq_calendar_display_entries() -> TableIterator<
+    'static,
+    (
+        name!(calendar, String),
+        name!(entry, i32),
+    ),
+> {
+    let mut data: Vec<(String, i32)> = vec!();
+    CALENDAR_ID_MAP
+        .share()
+        .iter()
+        .for_each(|(calendar_id, calendar)| {
+            let calendar_name = get_calendar_name_from_id(*calendar_id);
+            calendar.dates.iter().for_each(
+                |date| {
+                    data.push((format!("{} ({})", calendar_id, calendar_name), *date));
+                }
+            );
+
+        });
+    TableIterator::new(data)
+}
+
 
 // #[pg_extern]
 // fn kq_calendar_display_cache() {
