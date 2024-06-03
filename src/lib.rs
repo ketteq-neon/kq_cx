@@ -357,20 +357,11 @@ fn kq_invalidate_calendar_cache() -> &'static str {
     "Cache invalidated."
 }
 
-#[pg_extern]
-fn kq_calendar_cache_info() -> TableIterator<
-    'static,
-    (
-        name!(calendar_id, i64),
-        name!(calendar_name, String),
-        name!(entries, i64),
-        name!(page_size, i32),
-        name!(page_map_entries, i64),
-    ),
-> {
-    ensure_cache_populated();
+type CalendarInfo = (i64, String, i64, i32, i64);
+
+fn get_calendars_info() -> Vec<CalendarInfo> {
     let calendar_name_map = CALENDAR_NAME_ID_MAP.share().clone();
-    let result_vec: Vec<(_, _, _, _, _)> = CALENDAR_ID_MAP
+    CALENDAR_ID_MAP
         .share()
         .iter()
         .map(|(calendar_id, calendar)| {
@@ -384,8 +375,21 @@ fn kq_calendar_cache_info() -> TableIterator<
                 }).unwrap();
             (*calendar_id, calendar_name, calendar.dates.len() as i64, calendar.page_size, calendar.page_map.len() as i64)
         })
-        .collect();
-    TableIterator::new(result_vec)
+        .collect()
+}
+
+#[pg_extern]
+fn kq_calendar_cache_info() -> TableIterator<
+    'static,
+    (
+        name!(calendar_id, i64),
+        name!(calendar_name, String),
+        name!(entries, i64),
+        name!(page_size, i32),
+        name!(page_map_entries, i64),
+    ),
+> {
+    TableIterator::new(get_calendars_info())
 }
 
 #[pg_extern]
@@ -413,16 +417,12 @@ fn kq_calendar_info() -> TableIterator<
     data.push(("[Q2] Get Calendar Entry Count per Calendar ID", get_guc_string(&Q3_GET_CAL_ENTRY_COUNT)));
     data.push(("[Q3] Get Calendar Entries", get_guc_string(&Q4_GET_ENTRIES)));
 
+    get_calendars_info()
+        .iter()
+        .for_each(|calendar_info| {
+            data.push((&format!("  Calendar {} ({}) Entries", calendar_info.0, calendar_info.1), format!("{}", calendar_info.2)));
+        });
 
-
-    // let result_vec: Vec<(_, _)> = CALENDAR_ID_MAP
-    //     .share()
-    //     .iter()
-    //     .map(|(calendar_id, calendar)| {
-    //         debug1!("displaying: calendar_id = {}, entries = {}", calendar_id, calendar.dates.len());
-    //         (*calendar_id, calendar.dates.len() as i64)
-    //     })
-    //     .collect();
     TableIterator::new(data)
 }
 
