@@ -352,8 +352,6 @@ fn kq_invalidate_calendar_cache() -> &'static str {
     debug1!("CALENDAR_NAME_ID_MAP cleared");
     CALENDAR_ID_MAP.exclusive().clear();
     debug1!("CALENDAR_ID_MAP cleared");
-    CALENDAR_ID_MAP.exclusive().clear();
-    debug1!("CALENDARS cleared");
     *CALENDAR_CONTROL.exclusive() = CalendarControl::default();
     debug1!("Cache invalidated");
     "Cache invalidated."
@@ -398,7 +396,6 @@ fn kq_calendar_info() -> TableIterator<
         name!(value, String),
     ),
 > {
-    ensure_cache_populated();
     let control = CALENDAR_CONTROL.share().clone();
     let mut data: Vec<(&str, String)> = vec!();
     data.push(("PostgreSQL SDK Version", pg_sys::PG_VERSION_NUM.to_string()));
