@@ -208,7 +208,7 @@ fn ensure_cache_populated() {
         let select = client.select(&get_guc_string(&Q4_GET_ENTRIES), None, None);
         match select {
             Ok(tuple_table) => {
-                let mut current_calendar_id = 0;
+                let mut current_calendar_id = -1;
                 let mut current_calendar_entries: Vec<i32> = vec!();
 
                 for row in tuple_table {
@@ -217,14 +217,13 @@ fn ensure_cache_populated() {
 
                     debug1!("Got Entry: {calendar_id} => {calendar_entry}");
 
-                    if current_calendar_id == 0 {
+                    if current_calendar_id == -1 {
                         // First loop
                         current_calendar_id = calendar_id;
                     }
 
                     // Calendar filled, next calendar
                     if current_calendar_id != calendar_id {
-                        current_calendar_id = calendar_id;
                         // Update the Calendar
                         if let Some(mut calendar) = calendar_id_map.get_mut(&calendar_id) {
                             debug1!("Loaded {} entries for calendar_id = {}", current_calendar_entries.len(), calendar_id);
@@ -232,6 +231,7 @@ fn ensure_cache_populated() {
                         } else {
                             error!("cannot add entries: calendar {} not initialized", calendar_id)
                         }
+                        current_calendar_id = calendar_id;
                         current_calendar_entries.clear();
                     }
 
