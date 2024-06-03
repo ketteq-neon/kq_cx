@@ -404,7 +404,11 @@ fn kq_calendar_info() -> TableIterator<
     data.push(("PostgreSQL SDK Version", pg_sys::PG_VERSION_NUM.to_string()));
     data.push(("PostgreSQL SDK Build", std::str::from_utf8(pg_sys::PG_VERSION_STR).unwrap().to_string()));
     data.push(("Extension Version", env!("CARGO_PKG_VERSION").to_string()));
-    data.push(("Extension Build", env!("PGRX_BUILD_PROFILE").to_string()));
+    if cfg!(debug_assertions) {
+        data.push(("Extension Build", "Debug".to_string()));
+    } else {
+        data.push(("Extension Build", "Release".to_string()));
+    }
     data.push(("Cache Available", control.filled.to_string()));
     data.push(("Slice Cache Size (Calendar ID Count)", control.calendar_id_count.to_string()));
     data.push(("Entry Cache Size (Entries)", control.entry_count.to_string()));
