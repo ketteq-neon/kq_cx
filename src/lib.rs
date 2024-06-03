@@ -3,9 +3,8 @@ mod math;
 use pgrx::lwlock::PgLwLock;
 use pgrx::prelude::*;
 use pgrx::shmem::*;
-use pgrx::{pg_shmem_init, GucContext, GucFlags, GucRegistry, GucSetting, PgAtomic};
+use pgrx::{pg_shmem_init, GucContext, GucFlags, GucRegistry, GucSetting};
 use std::ffi::CStr;
-use std::ops::Deref;
 use pgrx::spi::SpiResult;
 
 pgrx::pg_module_magic!();
@@ -66,17 +65,26 @@ pub struct Calendar {
 
 unsafe impl PGRXSharedMemory for Calendar {}
 
+#[derive(Default, Clone, Debug)]
+pub struct CalendarControl {
+    calendar_id_count: i64,
+    entry_count: i64,
+    filled: bool
+}
+
+unsafe impl PGRXSharedMemory for CalendarControl {}
+
 // Shared Objects
 
 static CALENDAR_ID_MAP: PgLwLock<CalendarIdMap> = PgLwLock::new();
 static CALENDAR_NAME_ID_MAP: PgLwLock<CalendarNameIdMap> = PgLwLock::new();
-static CONTROL_CACHE_FILLED: PgLwLock<bool> = PgLwLock::new();
+static CALENDAR_CONTROL: PgLwLock<CalendarControl> = PgLwLock::new();
 
 #[pg_guard]
 pub extern "C" fn _PG_init() {
     pg_shmem_init!(CALENDAR_ID_MAP);
     pg_shmem_init!(CALENDAR_NAME_ID_MAP);
-    pg_shmem_init!(CONTROL_CACHE_FILLED);
+    pg_shmem_init!(CALENDAR_CONTROL);
     unsafe {
         init_gucs();
     }
@@ -133,7 +141,7 @@ fn get_guc_string(guc: &GucStrSetting) -> String {
 
 fn ensure_cache_populated() {
     debug1!("ensure_cache_populated()");
-    if CONTROL_CACHE_FILLED.share().clone() {
+    if CALENDAR_CONTROL.share().clone().filled {
         debug1!("Cache already filled. Skipping loading from DB.");
         return;
     }
@@ -230,7 +238,7 @@ fn ensure_cache_populated() {
                     if prev_calendar_id != calendar_id {
                         // Update the Calendar
                         if let Some(mut prev_calendar) = calendar_id_map.get_mut(&prev_calendar_id) {
-                            debug1!("Loaded {} entries for calendar_id = {}", current_calendar_entries.len(), prev_calendar_id);
+                            debug1!("loaded {} entries for calendar_id = {}", current_calendar_entries.len(), prev_calendar_id);
                             prev_calendar.dates.extend_from_slice(&*current_calendar_entries).expect("cannot add entries to calendar");
                             total_entries += prev_calendar.dates.len();
                         } else {
@@ -257,10 +265,10 @@ fn ensure_cache_populated() {
             }
         }
     });
-    debug1!("Entries {total_entries} loaded intro cache, calculating page map...");
+    debug1!("{total_entries} entries loaded intro cache, calculating page map...");
     // Page Size init
     {
-        let mut calendar_id_map = CALENDAR_ID_MAP.exclusive();
+        let calendar_id_map = CALENDAR_ID_MAP.exclusive();
         calendar_id_map
             .iter()
             .for_each(|(calendar_id, mut calendar)| {
@@ -299,7 +307,11 @@ fn ensure_cache_populated() {
             })
     }
 
-    *CONTROL_CACHE_FILLED.exclusive() = true;
+    *CALENDAR_CONTROL.exclusive() = CalendarControl {
+        entry_count: total_entry_count,
+        calendar_id_count: calendar_count,
+        filled: true,
+    };
 }
 
 /// Checks if the schema is compatible with the extension.
@@ -342,7 +354,7 @@ fn kq_invalidate_calendar_cache() -> &'static str {
     debug1!("CALENDAR_ID_MAP cleared");
     CALENDAR_ID_MAP.exclusive().clear();
     debug1!("CALENDARS cleared");
-    *CONTROL_CACHE_FILLED.exclusive() = false;
+    *CALENDAR_CONTROL.exclusive() = CalendarControl::default();
     debug1!("Cache invalidated");
     "Cache invalidated."
 }
@@ -354,11 +366,13 @@ fn kq_calendar_cache_info() -> TableIterator<
         name!(calendar_id, i64),
         name!(calendar_name, String),
         name!(entries, i64),
+        name!(page_size, i32),
+        name!(page_map_entries, i64),
     ),
 > {
     ensure_cache_populated();
     let calendar_name_map = CALENDAR_NAME_ID_MAP.share().clone();
-    let result_vec: Vec<(_, _, _)> = CALENDAR_ID_MAP
+    let result_vec: Vec<(_, _, _, _, _)> = CALENDAR_ID_MAP
         .share()
         .iter()
         .map(|(calendar_id, calendar)| {
@@ -370,7 +384,7 @@ fn kq_calendar_cache_info() -> TableIterator<
                 .map(|(m_calendar_name, _)| {
                     m_calendar_name.to_string()
                 }).unwrap();
-            (*calendar_id, calendar_name, calendar.dates.len() as i64)
+            (*calendar_id, calendar_name, calendar.dates.len() as i64, calendar.page_size, calendar.page_map.len() as i64)
         })
         .collect();
     TableIterator::new(result_vec)
@@ -380,20 +394,35 @@ fn kq_calendar_cache_info() -> TableIterator<
 fn kq_calendar_info() -> TableIterator<
     'static,
     (
-        name!(calendar_id, i64),
-        name!(entries, i64),
+        name!(property, &'static str),
+        name!(value, String),
     ),
 > {
     ensure_cache_populated();
-    let result_vec: Vec<(_, _)> = CALENDAR_ID_MAP
-        .share()
-        .iter()
-        .map(|(calendar_id, calendar)| {
-            debug1!("displaying: calendar_id = {}, entries = {}", calendar_id, calendar.dates.len());
-            (*calendar_id, calendar.dates.len() as i64)
-        })
-        .collect();
-    TableIterator::new(result_vec)
+    let control = CALENDAR_CONTROL.share().clone();
+    let mut data: Vec<(&str, String)> = vec!();
+    data.push(("PostgreSQL SDK Version", pg_sys::PG_VERSION_NUM.to_string()));
+    data.push(("PostgreSQL SDK Build", std::str::from_utf8(pg_sys::PG_VERSION_STR).unwrap().to_string()));
+    data.push(("Extension Version", env!("CARGO_PKG_VERSION").to_string()));
+    data.push(("Extension Build", env!("PGRX_BUILD_PROFILE=").to_string()));
+    data.push(("Cache Available", control.filled.to_string()));
+    data.push(("Slice Cache Size (Calendar ID Count)", control.calendar_id_count.to_string()));
+    data.push(("Entry Cache Size (Entries)", control.entry_count.to_string()));
+    data.push(("[Q1] Get Calendar IDs", get_guc_string(&Q2_GET_CALENDAR_IDS)));
+    data.push(("[Q2] Get Calendar Entry Count per Calendar ID", get_guc_string(&Q3_GET_CAL_ENTRY_COUNT)));
+    data.push(("[Q3] Get Calendar Entries", get_guc_string(&Q4_GET_ENTRIES)));
+
+
+
+    // let result_vec: Vec<(_, _)> = CALENDAR_ID_MAP
+    //     .share()
+    //     .iter()
+    //     .map(|(calendar_id, calendar)| {
+    //         debug1!("displaying: calendar_id = {}, entries = {}", calendar_id, calendar.dates.len());
+    //         (*calendar_id, calendar.dates.len() as i64)
+    //     })
+    //     .collect();
+    TableIterator::new(data)
 }
 
 // #[pg_extern]
