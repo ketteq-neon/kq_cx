@@ -427,7 +427,7 @@ fn kq_calendar_info() -> TableIterator<
 }
 
 #[pg_extern]
-fn kq_calendar_display_entries() -> TableIterator<
+fn kq_calendar_display_cache() -> TableIterator<
     'static,
     (
         name!(calendar, String),
@@ -450,11 +450,44 @@ fn kq_calendar_display_entries() -> TableIterator<
     TableIterator::new(data)
 }
 
+fn add_calendar_days(calendar: &Calendar, input_date: i32, interval: i32) -> (i32, usize, usize) {
+    if !CALENDAR_CONTROL.share().filled {
+        error!("cannot calculate without cache")
+    }
+    let prev_date_index = math::get_closest_index_from_left(input_date, calendar);
+    let result_date_index = prev_date_index + interval;
 
-// #[pg_extern]
-// fn kq_calendar_display_cache() {
-//
-// }
+    return if result_date_index >= 0 {
+        if prev_date_index < 0 {
+            // Handle Negative OOB indices (When interval is negative)
+            return (*calendar.dates.get(0).unwrap(), prev_date_index as usize, result_date_index as usize)
+        }
+        if result_date_index >= calendar.dates.len() as i32 {
+            // Handle Positive OOB Indices (When interval is positive)
+            // Returns infinity+
+            return (i32::MAX, prev_date_index as usize, result_date_index as usize)
+        }
+        (*calendar.dates.get(result_date_index as usize).unwrap(), prev_date_index as usize, result_date_index as usize)
+    } else {
+        // First date of calendar
+        (*calendar.dates.get(0).unwrap(), prev_date_index as usize, result_date_index as usize)
+    }
+}
+
+#[pg_extern]
+unsafe fn kq_add_days_by_id(input_date: pgrx::Date, interval: i32, calendar_id: i64) -> Option<pgrx::Date> {
+    ensure_cache_populated();
+    match CALENDAR_ID_MAP.share().get(&calendar_id) {
+        None => {
+            return None;
+        }
+        Some(calendar) => {
+            let result_date = add_calendar_days(calendar, input_date.to_pg_epoch_days(), interval).0;
+            let result_date = pgrx::Date::from_pg_epoch_days(result_date);
+            Some(result_date)
+        }
+    }
+}
 
 #[pg_extern]
 fn hello_kq_fx_calendar() -> &'static str {
