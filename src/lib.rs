@@ -1,3 +1,5 @@
+mod math;
+
 use pgrx::lwlock::PgLwLock;
 use pgrx::prelude::*;
 use pgrx::shmem::*;
@@ -33,6 +35,7 @@ ORDER BY cd.calendar_id asc, cd."date" ASC;"#;
 
 type GucStrSetting = GucSetting<Option<&'static CStr>>;
 type EntriesVec = heapless::Vec<i32, MAX_ENTRIES_PER_CALENDAR>;
+type PageMapVec = heapless::Vec<usize, MAX_ENTRIES_PER_CALENDAR>;
 
 // type CalendarsVec = heapless::Vec<Calendar, MAX_CALENDARS>;
 
@@ -56,9 +59,9 @@ static Q4_GET_ENTRIES: GucStrSetting = GucStrSetting::new(Some(DEF_Q4_GET_ENTRIE
 pub struct Calendar {
     calendar_id: i64, // may not be necessary
     dates: EntriesVec,
-    page_size: i64,
-    first_page_offset: i64,
-    page_map: EntriesVec,
+    page_size: i32,
+    first_page_offset: i32,
+    page_map: PageMapVec,
 }
 
 unsafe impl PGRXSharedMemory for Calendar {}
@@ -229,13 +232,21 @@ fn ensure_cache_populated() {
                             debug1!("Loaded {} entries for calendar_id = {}", current_calendar_entries.len(), prev_calendar_id);
                             prev_calendar.dates.extend_from_slice(&*current_calendar_entries).expect("cannot add entries to calendar");
                         } else {
-                            error!("cannot add entries: calendar {} not initialized", calendar_id)
+                            error!("cannot add entries: calendar {} not initialized", prev_calendar_id)
                         }
                         prev_calendar_id = calendar_id;
                         current_calendar_entries.clear();
                     }
 
                     current_calendar_entries.push(calendar_entry.to_pg_epoch_days());
+                }
+
+                // End reached, push last calendar entries
+                if let Some(mut prev_calendar) = calendar_id_map.get_mut(&prev_calendar_id) {
+                    debug1!("Loaded {} entries for calendar_id = {} - Load complete.", current_calendar_entries.len(), prev_calendar_id);
+                    prev_calendar.dates.extend_from_slice(&*current_calendar_entries).expect("cannot add entries to calendar");
+                } else {
+                    error!("cannot add entries: calendar {} not initialized", prev_calendar_id)
                 }
             }
             Err(spi_error) => {
@@ -244,9 +255,48 @@ fn ensure_cache_populated() {
         }
     });
 
+    // Page Size init
+    {
+        let mut calendar_id_map = CALENDAR_ID_MAP.exclusive();
+        calendar_id_map
+            .iter()
+            .for_each(|(calendar_id, mut calendar)| {
+                let first_date = *calendar.dates.first().unwrap();
+                let last_date = *calendar.dates.last().unwrap();
+                let entry_count = calendar.dates.len() as i64;
+                let page_size_tmp = math::calculate_page_size(first_date, last_date, entry_count);
+                if page_size_tmp == 0 {
+                    error!("page size cannot be 0, cannot be calculated")
+                }
+                let first_page_offset = first_date / page_size_tmp;
+
+                let mut prev_page_index = 0;
+                let mut page_map: Vec<usize> = vec!();
+
+                for calendar_date_index in 0..calendar.dates.len() {
+                    let date = calendar.dates.get(calendar_date_index).unwrap();
+                    let page_index = (date / page_size_tmp) - first_page_offset;
+                    while prev_page_index < page_index {
+                        prev_page_index = prev_page_index + 1;
+                        page_map.insert(prev_page_index as usize, calendar_date_index);
+                    }
+                }
+
+                let mut new_calendar: Calendar = Calendar {
+                    page_size: page_size_tmp,
+                    first_page_offset,
+                    ..calendar.clone()
+                };
+
+                new_calendar.page_map.extend_from_slice(&*page_map).expect(&format!("cannot set page_map for calendar {calendar_id}"));
+
+                debug1!("Page size for calendar {calendar_id} calculated {page_size_tmp} and map created");
+
+                calendar = &new_calendar
+            })
+    }
+
     *CONTROL_CACHE_FILLED.exclusive() = true;
-
-
 }
 
 fn validate_compatible_db() {
