@@ -208,34 +208,33 @@ fn ensure_cache_populated() {
         let select = client.select(&get_guc_string(&Q4_GET_ENTRIES), None, None);
         match select {
             Ok(tuple_table) => {
-                let mut current_calendar_id = -1;
+                let mut prev_calendar_id = -1;
                 let mut current_calendar_entries: Vec<i32> = vec!();
 
                 for row in tuple_table {
                     let calendar_id: i64 = row[1].value().unwrap().unwrap();
                     let calendar_entry: pgrx::Date = row[2].value().unwrap().unwrap();
 
-                    debug1!("Got Entry: {calendar_id} => {calendar_entry}");
+                    debug1!("Got Entry: {calendar_id} => {calendar_entry} ({})", calendar_entry.to_pg_epoch_days());
 
-                    if current_calendar_id == -1 {
+                    if prev_calendar_id == -1 {
                         // First loop
-                        current_calendar_id = calendar_id;
+                        prev_calendar_id = calendar_id;
                     }
 
                     // Calendar filled, next calendar
-                    if current_calendar_id != calendar_id {
+                    if prev_calendar_id != calendar_id {
                         // Update the Calendar
-                        if let Some(mut calendar) = calendar_id_map.get_mut(&calendar_id) {
-                            debug1!("Loaded {} entries for calendar_id = {}", current_calendar_entries.len(), calendar_id);
-                            calendar.dates.extend_from_slice(&*current_calendar_entries).expect("cannot add entries to calendar");
+                        if let Some(mut prev_calendar) = calendar_id_map.get_mut(&prev_calendar_id) {
+                            debug1!("Loaded {} entries for calendar_id = {}", current_calendar_entries.len(), prev_calendar_id);
+                            prev_calendar.dates.extend_from_slice(&*current_calendar_entries).expect("cannot add entries to calendar");
                         } else {
                             error!("cannot add entries: calendar {} not initialized", calendar_id)
                         }
-                        current_calendar_id = calendar_id;
+                        prev_calendar_id = calendar_id;
                         current_calendar_entries.clear();
                     }
 
-                    debug1!("inserting entry date into calendar {calendar_id} = {}", calendar_entry.to_pg_epoch_days());
                     current_calendar_entries.push(calendar_entry.to_pg_epoch_days());
                 }
             }
@@ -246,6 +245,8 @@ fn ensure_cache_populated() {
     });
 
     *CONTROL_CACHE_FILLED.exclusive() = true;
+
+
 }
 
 fn validate_compatible_db() {
@@ -267,6 +268,17 @@ fn validate_compatible_db() {
     }
 }
 
+fn get_calendar_name_from_id(calendar_id: i64) -> String {
+    CALENDAR_NAME_ID_MAP.share()
+        .iter()
+        .find(|&(_, map_calendar_id)| {
+            map_calendar_id == &calendar_id
+        })
+        .map(|(m_calendar_name, _)| {
+            m_calendar_name.to_string()
+        }).unwrap()
+}
+
 #[pg_extern]
 fn kq_invalidate_calendar_cache() -> &'static str {
     debug1!("Waiting for lock...");
@@ -286,6 +298,35 @@ fn kq_calendar_cache_info() -> TableIterator<
     'static,
     (
         name!(calendar_id, i64),
+        name!(calendar_name, String),
+        name!(entries, i64),
+    ),
+> {
+    ensure_cache_populated();
+    let calendar_name_map = CALENDAR_NAME_ID_MAP.share().clone();
+    let result_vec: Vec<(_, _, _)> = CALENDAR_ID_MAP
+        .share()
+        .iter()
+        .map(|(calendar_id, calendar)| {
+            let calendar_name = calendar_name_map
+                .iter()
+                .find(|&(_, map_calendar_id)| {
+                    map_calendar_id == calendar_id
+                })
+                .map(|(m_calendar_name, _)| {
+                    m_calendar_name.to_string()
+                }).unwrap();
+            (*calendar_id, calendar_name, calendar.dates.len() as i64)
+        })
+        .collect();
+    TableIterator::new(result_vec)
+}
+
+#[pg_extern]
+fn kq_calendar_info() -> TableIterator<
+    'static,
+    (
+        name!(calendar_id, i64),
         name!(entries, i64),
     ),
 > {
@@ -300,6 +341,11 @@ fn kq_calendar_cache_info() -> TableIterator<
         .collect();
     TableIterator::new(result_vec)
 }
+
+// #[pg_extern]
+// fn kq_calendar_display_cache() {
+//
+// }
 
 #[pg_extern]
 fn hello_kq_fx_calendar() -> &'static str {
