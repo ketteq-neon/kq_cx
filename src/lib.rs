@@ -95,23 +95,23 @@ unsafe fn init_gucs() {
         GucFlags::empty(),
     );
     GucRegistry::define_string_guc(
-        "kq.calendar.q2_get_calendars_entry_count",
-        "Query to select the entry count for each calendar.",
+        "kq.calendar.q1_get_calendar_min_max_id",
+        "Query to select the MIN and MAX calendars.",
         "",
         &Q2_GET_CALENDAR_IDS,
         GucContext::Suset,
         GucFlags::empty(),
     );
     GucRegistry::define_string_guc(
-        "kq.calendar.q3_get_calendar_entries",
-        "Query to select all calendar entries. This will be copied to the cache.",
+        "kq.calendar.q2_get_calendars_entry_count",
+        "Query to select the entry count for each calendar.",
         "",
         &Q3_GET_CAL_ENTRY_COUNT,
         GucContext::Suset,
         GucFlags::empty(),
     );
     GucRegistry::define_string_guc(
-        "kq.currency.q4_get_currency_entries",
+        "kq.calendar.q3_get_calendar_entries",
         "Query to actually get the currencies and store it in the shared memory cache.",
         "",
         &Q4_GET_ENTRIES,
@@ -202,7 +202,7 @@ fn ensure_cache_populated() {
             }
         };
     });
-
+    // Fill Cache
     Spi::connect(|client| {
         let mut calendar_id_map = CALENDAR_ID_MAP.exclusive();
         let select = client.select(&get_guc_string(&Q4_GET_ENTRIES), None, None);
@@ -219,6 +219,7 @@ fn ensure_cache_populated() {
                         current_calendar_id = calendar_id;
                     }
 
+                    // Calendar filled, next calendar
                     if current_calendar_id != calendar_id {
                         current_calendar_id = calendar_id;
                         // Update the Calendar
@@ -327,6 +328,11 @@ pub mod pg_test {
     }
 
     pub fn postgresql_conf_options() -> Vec<&'static str> {
-        vec!["shared_preload_libraries = 'kq_imcx'"]
+        vec![
+            "shared_preload_libraries = 'kq_imcx'",
+            "log_min_messages = debug1",
+            "log_min_error_statement = debug1",
+            "client_min_messages = debug1"
+        ]
     }
 }
