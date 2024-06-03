@@ -166,7 +166,7 @@ fn ensure_cache_populated() {
     }
     let calendar_count = max_id - min_id + 1;
     debug1!(
-        "Min ID: {}, Max ID: {}, Currencies: {}",
+        "Min ID: {}, Max ID: {}, Calendars: {}",
         min_id,
         max_id,
         calendar_count
@@ -213,6 +213,9 @@ fn ensure_cache_populated() {
 
                 for row in tuple_table {
                     let calendar_id: i64 = row[1].value().unwrap().unwrap();
+                    let calendar_entry: pgrx::Date = row[2].value().unwrap().unwrap();
+
+                    debug1!("Got Entry: {calendar_id} => {calendar_entry}");
 
                     if current_calendar_id == 0 {
                         // First loop
@@ -232,8 +235,7 @@ fn ensure_cache_populated() {
                         current_calendar_entries.clear();
                     }
 
-                    let calendar_entry: pgrx::Date = row[2].value().unwrap().unwrap();
-
+                    debug1!("inserting entry date into calendar {calendar_id} = {}", calendar_entry.to_pg_epoch_days());
                     current_calendar_entries.push(calendar_entry.to_pg_epoch_days());
                 }
             }
