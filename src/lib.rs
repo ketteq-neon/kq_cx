@@ -3,7 +3,7 @@ mod math;
 use pgrx::lwlock::PgLwLock;
 use pgrx::prelude::*;
 use pgrx::shmem::*;
-use pgrx::{pg_shmem_init, GucContext, GucFlags, GucRegistry, GucSetting};
+use pgrx::{pg_shmem_init, GucContext, GucFlags, GucRegistry, GucSetting, PgLwLockShareGuard};
 use std::ffi::CStr;
 use pgrx::spi::SpiResult;
 
@@ -333,11 +333,11 @@ fn validate_compatible_db() {
     }
 }
 
-fn get_calendar_name_from_id(calendar_id: i64) -> String {
-    CALENDAR_NAME_ID_MAP.share()
+fn get_calendar_name_from_id(shared_calendar_id_map: PgLwLockShareGuard<CalendarNameIdMap>, calendar_id: &i64) -> String {
+    shared_calendar_id_map
         .iter()
         .find(|&(_, map_calendar_id)| {
-            map_calendar_id == &calendar_id
+            map_calendar_id == calendar_id
         })
         .map(|(m_calendar_name, _)| {
             m_calendar_name.to_string()
@@ -358,19 +358,12 @@ fn kq_invalidate_calendar_cache() -> &'static str {
 
 type CalendarInfo = (i64, String, i64, i32, i64);
 fn get_calendars_info() -> Vec<CalendarInfo> {
-    let calendar_name_map = CALENDAR_NAME_ID_MAP.share().clone();
+    let calendar_name_map = CALENDAR_NAME_ID_MAP.share();
     CALENDAR_ID_MAP
         .share()
         .iter()
         .map(|(calendar_id, calendar)| {
-            let calendar_name = calendar_name_map
-                .iter()
-                .find(|&(_, map_calendar_id)| {
-                    map_calendar_id == calendar_id
-                })
-                .map(|(m_calendar_name, _)| {
-                    m_calendar_name.to_string()
-                }).unwrap();
+            let calendar_name = get_calendar_name_from_id(calendar_name_map, calendar_id);
             (*calendar_id, calendar_name, calendar.dates.len() as i64, calendar.page_size, calendar.page_map.len() as i64)
         })
         .collect()
@@ -418,7 +411,10 @@ fn kq_calendar_info() -> TableIterator<
     get_calendars_info()
         .iter()
         .for_each(|calendar_info| {
-            data.push((format!("  Calendar {} ({}) Entries", calendar_info.0, calendar_info.1), format!("{}", calendar_info.2)));
+            data.push((format!("  Calendar {} ({})", calendar_info.0, calendar_info.1), "".to_string()));
+            data.push(("      Entries".to_string(), format!("{}", calendar_info.2)));
+            data.push(("      Page Size".to_string(), format!("{}", calendar_info.3)));
+            data.push(("      Page Map Entries".to_string(), format!("{}", calendar_info.4)));
         });
 
     TableIterator::new(data)
@@ -437,10 +433,34 @@ fn kq_calendar_display_cache() -> TableIterator<
         .share()
         .iter()
         .for_each(|(calendar_id, calendar)| {
-            let calendar_name = get_calendar_name_from_id(*calendar_id);
+            let calendar_name = get_calendar_name_from_id(CALENDAR_NAME_ID_MAP.share(), calendar_id);
             calendar.dates.iter().for_each(
                 |date| unsafe {
                     data.push((format!("{} ({})", calendar_id, calendar_name), pgrx::Date::from_pg_epoch_days(*date)));
+                }
+            );
+
+        });
+    TableIterator::new(data)
+}
+
+#[pg_extern(parallel_safe)]
+fn kq_calendar_display_page_map() -> TableIterator<
+    'static,
+    (
+        name!(calendar, String),
+        name!(index, i64),
+    ),
+> {
+    let mut data: Vec<(String, i64)> = vec![];
+    CALENDAR_ID_MAP
+        .share()
+        .iter()
+        .for_each(|(calendar_id, calendar)| {
+            let calendar_name = get_calendar_name_from_id(CALENDAR_NAME_ID_MAP.share(), calendar_id);
+            calendar.page_map.iter().for_each(
+                |index| unsafe {
+                    data.push((format!("{} ({})", calendar_id, calendar_name), *index as i64));
                 }
             );
 
