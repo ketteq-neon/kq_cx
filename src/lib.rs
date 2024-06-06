@@ -221,7 +221,7 @@ fn ensure_cache_populated() {
         match select {
             Ok(tuple_table) => {
                 let mut prev_calendar_id = -1;
-                let mut current_calendar_entries: Vec<i32> = vec!();
+                let mut current_calendar_entries: Vec<i32> = vec![];
 
                 for row in tuple_table {
                     let calendar_id: i64 = row[1].value().unwrap().unwrap();
@@ -239,7 +239,7 @@ fn ensure_cache_populated() {
                         // Update the Calendar
                         if let Some(prev_calendar) = calendar_id_map.get_mut(&prev_calendar_id) {
                             debug1!("loaded {} entries for calendar_id = {}", current_calendar_entries.len(), prev_calendar_id);
-                            prev_calendar.dates.extend_from_slice(&*current_calendar_entries).expect("cannot add entries to calendar");
+                            prev_calendar.dates.extend_from_slice(current_calendar_entries.as_slice()).expect("cannot add entries to calendar");
                             total_entries += prev_calendar.dates.len();
                         } else {
                             error!("cannot add entries: calendar {} not initialized", prev_calendar_id)
@@ -254,7 +254,7 @@ fn ensure_cache_populated() {
                 // End reached, push last calendar entries
                 if let Some(prev_calendar) = calendar_id_map.get_mut(&prev_calendar_id) {
                     debug1!("Loaded {} entries for calendar_id = {} - Load complete.", current_calendar_entries.len(), prev_calendar_id);
-                    prev_calendar.dates.extend_from_slice(&*current_calendar_entries).expect("cannot add entries to calendar");
+                    prev_calendar.dates.extend_from_slice(current_calendar_entries.as_slice()).expect("cannot add entries to calendar");
                     total_entries += prev_calendar.dates.len();
                 } else {
                     error!("cannot add entries: calendar {} not initialized", prev_calendar_id)
@@ -287,7 +287,7 @@ fn ensure_cache_populated() {
                 let first_page_offset = first_date / page_size_tmp;
 
                 let mut prev_page_index = 0;
-                let mut page_map: Vec<usize> = vec!(0,);
+                let mut page_map: Vec<usize> = vec![0,];
 
                 for calendar_date_index in 0..calendar.dates.len() {
                     let date = calendar.dates.get(calendar_date_index).unwrap();
@@ -302,7 +302,7 @@ fn ensure_cache_populated() {
 
                 calendar.first_page_offset = first_page_offset;
                 calendar.page_size = page_size_tmp;
-                calendar.page_map.extend_from_slice(&*page_map).expect("cannot set page_map for calendar {calendar_id}");
+                calendar.page_map.extend_from_slice(page_map.as_slice()).expect("cannot set page_map for calendar {calendar_id}");
             });
     }
 
@@ -399,7 +399,7 @@ fn kq_calendar_info() -> TableIterator<
     ),
 > {
     let control = CALENDAR_CONTROL.share().clone();
-    let mut data: Vec<(String, String)> = vec!();
+    let mut data: Vec<(String, String)> = vec![];
     data.push(("PostgreSQL SDK Version".to_string(), pg_sys::PG_VERSION_NUM.to_string()));
     data.push(("PostgreSQL SDK Build".to_string(), std::str::from_utf8(pg_sys::PG_VERSION_STR).unwrap().to_string()));
     data.push(("Extension Version".to_string(), env!("CARGO_PKG_VERSION").to_string()));
@@ -432,7 +432,7 @@ fn kq_calendar_display_cache() -> TableIterator<
         name!(entry, pgrx::Date),
     ),
 > {
-    let mut data: Vec<(String, pgrx::Date)> = vec!();
+    let mut data: Vec<(String, pgrx::Date)> = vec![];
     CALENDAR_ID_MAP
         .share()
         .iter()
