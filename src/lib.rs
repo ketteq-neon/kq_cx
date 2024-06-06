@@ -268,13 +268,11 @@ fn ensure_cache_populated() {
     debug1!("{total_entries} entries loaded intro cache, calculating page map...");
     // Page Size init
     {
-        let calendar_id_map = {
-            CALENDAR_ID_MAP.share().clone()
-        };
-        let mut calendar_id_map_lock = CALENDAR_ID_MAP.exclusive();
-        calendar_id_map
-            .iter()
-            .for_each(| (calendar_id, calendar)| {
+        CALENDAR_ID_MAP
+            .exclusive()
+            .iter_mut()
+            .by_ref()
+            .for_each(|(calendar_id, calendar)| {
                 let first_date = calendar.dates.first().unwrap();
                 let last_date = calendar.dates.last().unwrap();
                 let entry_count = calendar.dates.len() as i64;
@@ -282,8 +280,6 @@ fn ensure_cache_populated() {
                 debug1!("Calculating page size (first_date: {}, last_date: {}, entry_count: {})", first_date, last_date, entry_count);
 
                 let page_size_tmp = math::calculate_page_size(*first_date, *last_date, entry_count);
-
-                debug1!("Caluculated page size: {}", page_size_tmp);
 
                 if page_size_tmp == 0 {
                     error!("page size cannot be 0, cannot be calculated")
@@ -304,14 +300,10 @@ fn ensure_cache_populated() {
 
                 debug1!("Page size for calendar {calendar_id} calculated {page_size_tmp}");
 
-                if let Some(mut_calendar) = calendar_id_map_lock.get_mut(&calendar_id) {
-                    mut_calendar.first_page_offset = first_page_offset;
-                    mut_calendar.page_size = page_size_tmp;
-                    mut_calendar.page_map.extend_from_slice(&*page_map).expect("cannot set page_map for calendar {calendar_id}");
-                } else {
-                    error!("cannot lock calendar {}, maybe not initialized", calendar_id)
-                }
-            })
+                calendar.first_page_offset = first_page_offset;
+                calendar.page_size = page_size_tmp;
+                calendar.page_map.extend_from_slice(&*page_map).expect("cannot set page_map for calendar {calendar_id}");
+            });
     }
 
     *CALENDAR_CONTROL.exclusive() = CalendarControl {
