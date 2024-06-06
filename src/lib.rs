@@ -216,7 +216,7 @@ fn ensure_cache_populated() {
     // Fill Cache
     let mut total_entries: usize = 0;
     Spi::connect(|client| {
-        let mut calendar_id_map_lock = CALENDAR_ID_MAP.exclusive();
+        let mut calendar_id_map = CALENDAR_ID_MAP.exclusive();
         let select = client.select(&get_guc_string(&Q4_GET_ENTRIES), None, None);
         match select {
             Ok(tuple_table) => {
@@ -237,7 +237,7 @@ fn ensure_cache_populated() {
                     // Calendar filled, next calendar
                     if prev_calendar_id != calendar_id {
                         // Update the Calendar
-                        if let Some(prev_calendar) = calendar_id_map_lock.get_mut(&prev_calendar_id) {
+                        if let Some(prev_calendar) = calendar_id_map.get_mut(&prev_calendar_id) {
                             debug1!("loaded {} entries for calendar_id = {}", current_calendar_entries.len(), prev_calendar_id);
                             prev_calendar.dates.extend_from_slice(&*current_calendar_entries).expect("cannot add entries to calendar");
                             total_entries += prev_calendar.dates.len();
@@ -252,7 +252,7 @@ fn ensure_cache_populated() {
                 }
 
                 // End reached, push last calendar entries
-                if let Some(prev_calendar) = calendar_id_map_lock.get_mut(&prev_calendar_id) {
+                if let Some(prev_calendar) = calendar_id_map.get_mut(&prev_calendar_id) {
                     debug1!("Loaded {} entries for calendar_id = {} - Load complete.", current_calendar_entries.len(), prev_calendar_id);
                     prev_calendar.dates.extend_from_slice(&*current_calendar_entries).expect("cannot add entries to calendar");
                     total_entries += prev_calendar.dates.len();
@@ -267,46 +267,45 @@ fn ensure_cache_populated() {
     });
     debug1!("{total_entries} entries loaded intro cache, calculating page map...");
     // Page Size init
-    {
-        let calendar_id_map = CALENDAR_ID_MAP.share().clone();
-        let mut calendar_id_map_lock = CALENDAR_ID_MAP.exclusive();
-        calendar_id_map
-            .iter()
-            .for_each(| (calendar_id, calendar)| {
-                let first_date = *calendar.dates.first().unwrap();
-                let last_date = *calendar.dates.last().unwrap();
-                let entry_count = calendar.dates.len() as i64;
-                let page_size_tmp = math::calculate_page_size(first_date, last_date, entry_count);
-                debug1!("Page size (calculated: {}, first_date: {}, last_date: {}, entry_count: {}", page_size_tmp, first_date, last_date, entry_count);
-                if page_size_tmp == 0 {
-                    error!("page size cannot be 0, cannot be calculated")
-                }
-                let first_page_offset = first_date / page_size_tmp;
-
-                let mut prev_page_index = 0;
-                let mut page_map: Vec<usize> = vec!(0,);
-
-                for calendar_date_index in 0..calendar.dates.len() {
-                    let date = calendar.dates.get(calendar_date_index).unwrap();
-                    let page_index = (date / page_size_tmp) - first_page_offset;
-                    while prev_page_index < page_index {
-                        prev_page_index += 1;
-                        page_map.insert(prev_page_index as usize, calendar_date_index);
-                    }
-                }
-
-                debug1!("Page size for calendar {calendar_id} calculated {page_size_tmp}");
-
-                if let Some(mut_calendar) = calendar_id_map_lock.get_mut(&calendar_id) {
-                    mut_calendar.first_page_offset = first_page_offset;
-                    mut_calendar.page_size = page_size_tmp;
-                    mut_calendar.page_map.extend_from_slice(&*page_map).expect("cannot set page_map for calendar {calendar_id}");
-                    total_entries += mut_calendar.dates.len();
-                } else {
-                    error!("cannot lock calendar {}, maybe not initialized", calendar_id)
-                }
-            })
-    }
+    // {
+    //     let calendar_id_map = CALENDAR_ID_MAP.share().clone();
+    //     let mut calendar_id_map_lock = CALENDAR_ID_MAP.exclusive();
+    //     calendar_id_map
+    //         .iter()
+    //         .for_each(| (calendar_id, calendar)| {
+    //             let first_date = *calendar.dates.first().unwrap();
+    //             let last_date = *calendar.dates.last().unwrap();
+    //             let entry_count = calendar.dates.len() as i64;
+    //             let page_size_tmp = math::calculate_page_size(first_date, last_date, entry_count);
+    //             debug1!("Page size (calculated: {}, first_date: {}, last_date: {}, entry_count: {}", page_size_tmp, first_date, last_date, entry_count);
+    //             if page_size_tmp == 0 {
+    //                 error!("page size cannot be 0, cannot be calculated")
+    //             }
+    //             let first_page_offset = first_date / page_size_tmp;
+    //
+    //             let mut prev_page_index = 0;
+    //             let mut page_map: Vec<usize> = vec!(0,);
+    //
+    //             for calendar_date_index in 0..calendar.dates.len() {
+    //                 let date = calendar.dates.get(calendar_date_index).unwrap();
+    //                 let page_index = (date / page_size_tmp) - first_page_offset;
+    //                 while prev_page_index < page_index {
+    //                     prev_page_index += 1;
+    //                     page_map.insert(prev_page_index as usize, calendar_date_index);
+    //                 }
+    //             }
+    //
+    //             debug1!("Page size for calendar {calendar_id} calculated {page_size_tmp}");
+    //
+    //             if let Some(mut_calendar) = calendar_id_map_lock.get_mut(&calendar_id) {
+    //                 mut_calendar.first_page_offset = first_page_offset;
+    //                 mut_calendar.page_size = page_size_tmp;
+    //                 mut_calendar.page_map.extend_from_slice(&*page_map).expect("cannot set page_map for calendar {calendar_id}");
+    //             } else {
+    //                 error!("cannot lock calendar {}, maybe not initialized", calendar_id)
+    //             }
+    //         })
+    // }
 
     *CALENDAR_CONTROL.exclusive() = CalendarControl {
         entry_count: total_entry_count,
