@@ -136,7 +136,8 @@ fn get_guc_string(guc: &GucStrSetting) -> String {
     // debug1!("Query: {value}");
     value
 }
-/// The function `ensure_cache_populated` populates a cache with calendar data from a database, ensuring
+
+/// The function `ensure_cache_populated` populates the cache with calendar data from the database, ensuring
 /// the cache is filled and ready for use.
 fn ensure_cache_populated() {
     // debug1!("ensure_cache_populated()");
@@ -198,12 +199,13 @@ fn ensure_cache_populated() {
                     let entry_count = row[2]
                         .value::<i64>()
                         .unwrap()
-                        .expect("entry_count canot be null");
+                        .expect("entry_count cannot be null");
                     let name = row[3]
                         .value::<&str>()
                         .unwrap()
                         .expect("calendar_name cannot be null");
 
+                    // Create a new calendar
                     calendar_id_map.insert(id, Calendar::default()).unwrap();
                     calendar_name_id_map.insert(name, id).unwrap();
 
@@ -237,7 +239,7 @@ fn ensure_cache_populated() {
                         .expect("calendar_entry cannot be null");
 
                     debug1!(
-                        "Got Entry: {calendar_id} => {calendar_entry} ({})",
+                        ">> got entry: {calendar_id} => {calendar_entry} ({})",
                         calendar_entry.to_pg_epoch_days()
                     );
 
@@ -251,7 +253,7 @@ fn ensure_cache_populated() {
                         // Update the Calendar
                         if let Some(prev_calendar) = calendar_id_map.get_mut(&prev_calendar_id) {
                             debug1!(
-                                "loaded {} entries for calendar_id = {}",
+                                ">> loaded {} entries into calendar_id = {}",
                                 current_calendar_entries.len(),
                                 prev_calendar_id
                             );
@@ -262,7 +264,7 @@ fn ensure_cache_populated() {
                             total_entries += prev_calendar.dates.len();
                         } else {
                             error!(
-                                "cannot add entries: calendar {} not initialized",
+                                "cannot add entries: calendar_id = {} not initialized",
                                 prev_calendar_id
                             )
                         }
@@ -276,7 +278,7 @@ fn ensure_cache_populated() {
                 // End reached, push last calendar entries
                 if let Some(prev_calendar) = calendar_id_map.get_mut(&prev_calendar_id) {
                     debug1!(
-                        "Loaded {} entries for calendar_id = {} - Load complete.",
+                        ">> loaded {} entries into calendar_id = {} >> load complete",
                         current_calendar_entries.len(),
                         prev_calendar_id
                     );
@@ -287,7 +289,7 @@ fn ensure_cache_populated() {
                     total_entries += prev_calendar.dates.len();
                 } else {
                     error!(
-                        "cannot add entries: calendar {} not initialized",
+                        "cannot add entries: calendar_id = {} not initialized",
                         prev_calendar_id
                     )
                 }
@@ -297,7 +299,7 @@ fn ensure_cache_populated() {
             }
         }
     });
-    debug1!("{total_entries} entries loaded intro cache, calculating page maps...");
+    debug1!("{total_entries} entries loaded");
     // Page Size init
     {
         CALENDAR_ID_MAP
@@ -309,7 +311,7 @@ fn ensure_cache_populated() {
                 let last_date = calendar.dates.last().expect("cannot get last_date");
                 let entry_count = calendar.dates.len() as i64;
 
-                debug1!("Calculating page size (first_date: {}, last_date: {}, entry_count: {})", first_date, last_date, entry_count);
+                // debug1!("calculating page size (first_date: {}, last_date: {}, entry_count: {})", first_date, last_date, entry_count);
 
                 let page_size_tmp = math::calculate_page_size(*first_date, *last_date, entry_count);
 
@@ -319,8 +321,9 @@ fn ensure_cache_populated() {
                 let first_page_offset = first_date / page_size_tmp;
 
                 let mut prev_page_index = 0;
-                let mut page_map: Vec<usize> = vec![0,];
+                let mut page_map: Vec<usize> = vec![0];
 
+                // Create page map
                 for calendar_date_index in 0..calendar.dates.len() {
                     let date = calendar.dates.get(calendar_date_index).expect("cannot get date from cache");
                     let page_index = (date / page_size_tmp) - first_page_offset;
@@ -330,7 +333,7 @@ fn ensure_cache_populated() {
                     }
                 }
 
-                debug1!("Page size for calendar {calendar_id} calculated {page_size_tmp}, page_map: {} entries", page_map.len());
+                debug1!("page_map created: calendar_id = {calendar_id}, page_size = {page_size_tmp}, page_map.len() = {}", page_map.len());
 
                 calendar.first_page_offset = first_page_offset;
                 calendar.page_size = page_size_tmp;
@@ -379,7 +382,6 @@ fn get_calendar_name_from_id(
 }
 
 fn get_calendars_info() -> Vec<CalendarInfo> {
-    // let calendar_name_map = CALENDAR_NAME_ID_MAP.share();
     CALENDAR_ID_MAP
         .share()
         .iter()
@@ -532,7 +534,7 @@ unsafe fn kq_add_days_by_id(input_date: PgDate, interval: i32, calendar_id: i64)
     ensure_cache_populated();
     match CALENDAR_ID_MAP.share().get(&calendar_id) {
         None => {
-            info!("calendar_id = {} not found in cache", calendar_id);
+            warning!("calendar_id = {} not found in cache", calendar_id);
             None
         }
         Some(calendar) => {
@@ -550,7 +552,7 @@ unsafe fn kq_add_days(input_date: Date, interval: i32, calendar_name: &str) -> O
     ensure_cache_populated();
     match CALENDAR_NAME_ID_MAP.share().get(calendar_name) {
         None => {
-            info!("calendar_name = {} not found in cache", calendar_name);
+            warning!("calendar_name = {} not found in cache", calendar_name);
             None
         }
         Some(calendar_id) => {
