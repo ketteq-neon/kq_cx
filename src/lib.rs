@@ -510,21 +510,22 @@ fn kq_add_days_by_id(input_date: pgrx::Date, interval: i32, calendar_id: i64) ->
 #[pg_extern(parallel_safe)]
 fn kq_add_days(input_date: pgrx::Date, interval: i32, calendar_name: &str) -> Option<pgrx::Date> {
     ensure_cache_populated();
-    let calendar_id = match CALENDAR_NAME_ID_MAP.share().get(calendar_name) {
+    match CALENDAR_NAME_ID_MAP.share().get(calendar_name) {
         None => {
             error!("calendar_name '{}' not found", calendar_name);
         }
-        Some(calendar_id) => calendar_id
-    };
-    match CALENDAR_ID_MAP.share().get(calendar_id) {
-        None => {
-            return None;
-        }
-        Some(calendar) => unsafe {
-            let result_date = add_calendar_days(calendar, input_date.to_pg_epoch_days(), interval).0;
-            debug1!("result from add_calendar_days: {}", result_date);
-            let result_date = pgrx::Date::from_pg_epoch_days(result_date);
-            Some(result_date)
+        Some(calendar_id) => {
+            match CALENDAR_ID_MAP.share().get(calendar_id) {
+                None => {
+                    return None;
+                }
+                Some(calendar) => unsafe {
+                    let result_date = add_calendar_days(calendar, input_date.to_pg_epoch_days(), interval).0;
+                    debug1!("result from add_calendar_days: {}", result_date);
+                    let result_date = pgrx::Date::from_pg_epoch_days(result_date);
+                    Some(result_date)
+                }
+            }
         }
     }
 }
