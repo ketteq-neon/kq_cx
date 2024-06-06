@@ -216,6 +216,7 @@ fn ensure_cache_populated() {
     // Fill Cache
     let mut total_entries: usize = 0;
     Spi::connect(|client| {
+        let mut calendar_id_map_lock = CALENDAR_ID_MAP.exclusive();
         let select = client.select(&get_guc_string(&Q4_GET_ENTRIES), None, None);
         match select {
             Ok(tuple_table) => {
@@ -236,7 +237,7 @@ fn ensure_cache_populated() {
                     // Calendar filled, next calendar
                     if prev_calendar_id != calendar_id {
                         // Update the Calendar
-                        if let Some(prev_calendar) = CALENDAR_ID_MAP.exclusive().get_mut(&prev_calendar_id) {
+                        if let Some(prev_calendar) = calendar_id_map_lock.get_mut(&prev_calendar_id) {
                             debug1!("loaded {} entries for calendar_id = {}", current_calendar_entries.len(), prev_calendar_id);
                             prev_calendar.dates.extend_from_slice(&*current_calendar_entries).expect("cannot add entries to calendar");
                             total_entries += prev_calendar.dates.len();
@@ -251,7 +252,7 @@ fn ensure_cache_populated() {
                 }
 
                 // End reached, push last calendar entries
-                if let Some(prev_calendar) = CALENDAR_ID_MAP.exclusive().get_mut(&prev_calendar_id) {
+                if let Some(prev_calendar) = calendar_id_map_lock.get_mut(&prev_calendar_id) {
                     debug1!("Loaded {} entries for calendar_id = {} - Load complete.", current_calendar_entries.len(), prev_calendar_id);
                     prev_calendar.dates.extend_from_slice(&*current_calendar_entries).expect("cannot add entries to calendar");
                     total_entries += prev_calendar.dates.len();
@@ -267,9 +268,9 @@ fn ensure_cache_populated() {
     debug1!("{total_entries} entries loaded intro cache, calculating page map...");
     // Page Size init
     {
-        CALENDAR_ID_MAP
-            .share()
-            .clone()
+        let calendar_id_map = CALENDAR_ID_MAP.share().clone();
+        let mut calendar_id_map_lock = CALENDAR_ID_MAP.exclusive();
+        calendar_id_map
             .iter()
             .for_each(| (calendar_id, calendar)| {
                 let first_date = *calendar.dates.first().unwrap();
@@ -296,7 +297,7 @@ fn ensure_cache_populated() {
 
                 debug1!("Page size for calendar {calendar_id} calculated {page_size_tmp}");
 
-                if let Some(mut_calendar) = CALENDAR_ID_MAP.exclusive().get_mut(&calendar_id) {
+                if let Some(mut_calendar) = calendar_id_map_lock.get_mut(&calendar_id) {
                     mut_calendar.first_page_offset = first_page_offset;
                     mut_calendar.page_size = page_size_tmp;
                     mut_calendar.page_map.extend_from_slice(&*page_map).expect("cannot set page_map for calendar {calendar_id}");
