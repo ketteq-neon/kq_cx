@@ -216,7 +216,6 @@ fn ensure_cache_populated() {
     // Fill Cache
     let mut total_entries: usize = 0;
     Spi::connect(|client| {
-        let mut calendar_id_map = CALENDAR_ID_MAP.exclusive();
         let select = client.select(&get_guc_string(&Q4_GET_ENTRIES), None, None);
         match select {
             Ok(tuple_table) => {
@@ -237,7 +236,7 @@ fn ensure_cache_populated() {
                     // Calendar filled, next calendar
                     if prev_calendar_id != calendar_id {
                         // Update the Calendar
-                        if let Some(prev_calendar) = calendar_id_map.get_mut(&prev_calendar_id) {
+                        if let Some(prev_calendar) = CALENDAR_ID_MAP.exclusive().get_mut(&prev_calendar_id) {
                             debug1!("loaded {} entries for calendar_id = {}", current_calendar_entries.len(), prev_calendar_id);
                             prev_calendar.dates.extend_from_slice(&*current_calendar_entries).expect("cannot add entries to calendar");
                             total_entries += prev_calendar.dates.len();
@@ -252,7 +251,7 @@ fn ensure_cache_populated() {
                 }
 
                 // End reached, push last calendar entries
-                if let Some(prev_calendar) = calendar_id_map.get_mut(&prev_calendar_id) {
+                if let Some(prev_calendar) = CALENDAR_ID_MAP.exclusive().get_mut(&prev_calendar_id) {
                     debug1!("Loaded {} entries for calendar_id = {} - Load complete.", current_calendar_entries.len(), prev_calendar_id);
                     prev_calendar.dates.extend_from_slice(&*current_calendar_entries).expect("cannot add entries to calendar");
                     total_entries += prev_calendar.dates.len();
@@ -270,6 +269,7 @@ fn ensure_cache_populated() {
     {
         CALENDAR_ID_MAP
             .share()
+            .clone()
             .iter()
             .for_each(| (calendar_id, calendar)| {
                 let first_date = *calendar.dates.first().unwrap();
@@ -293,7 +293,6 @@ fn ensure_cache_populated() {
                         page_map.insert(prev_page_index as usize, calendar_date_index);
                     }
                 }
-
 
                 debug1!("Page size for calendar {calendar_id} calculated {page_size_tmp}");
 
