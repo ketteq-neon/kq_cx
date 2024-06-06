@@ -358,7 +358,6 @@ fn kq_invalidate_calendar_cache() -> &'static str {
 }
 
 type CalendarInfo = (i64, String, i64, i32, i64);
-
 fn get_calendars_info() -> Vec<CalendarInfo> {
     let calendar_name_map = CALENDAR_NAME_ID_MAP.share().clone();
     CALENDAR_ID_MAP
@@ -378,7 +377,7 @@ fn get_calendars_info() -> Vec<CalendarInfo> {
         .collect()
 }
 
-#[pg_extern]
+#[pg_extern(parallel_safe)]
 fn kq_calendar_cache_info() -> TableIterator<
     'static,
     (
@@ -392,7 +391,7 @@ fn kq_calendar_cache_info() -> TableIterator<
     TableIterator::new(get_calendars_info())
 }
 
-#[pg_extern]
+#[pg_extern(parallel_safe)]
 fn kq_calendar_info() -> TableIterator<
     'static,
     (
@@ -426,23 +425,23 @@ fn kq_calendar_info() -> TableIterator<
     TableIterator::new(data)
 }
 
-#[pg_extern]
+#[pg_extern(parallel_safe)]
 fn kq_calendar_display_cache() -> TableIterator<
     'static,
     (
         name!(calendar, String),
-        name!(entry, i32),
+        name!(entry, pgrx::Date),
     ),
 > {
-    let mut data: Vec<(String, i32)> = vec!();
+    let mut data: Vec<(String, pgrx::Date)> = vec!();
     CALENDAR_ID_MAP
         .share()
         .iter()
         .for_each(|(calendar_id, calendar)| {
             let calendar_name = get_calendar_name_from_id(*calendar_id);
             calendar.dates.iter().for_each(
-                |date| {
-                    data.push((format!("{} ({})", calendar_id, calendar_name), *date));
+                |date| unsafe {
+                    data.push((format!("{} ({})", calendar_id, calendar_name), pgrx::Date::from_pg_epoch_days(*date)));
                 }
             );
 
@@ -455,7 +454,9 @@ fn add_calendar_days(calendar: &Calendar, input_date: i32, interval: i32) -> (i3
         error!("cannot calculate without cache")
     }
     let prev_date_index = math::get_closest_index_from_left(input_date, calendar);
+    debug1!("closest index from left: {}", prev_date_index);
     let result_date_index = prev_date_index + interval;
+    debug1!("closest result index: {}", result_date_index);
 
     return if result_date_index >= 0 {
         if prev_date_index < 0 {
@@ -474,22 +475,23 @@ fn add_calendar_days(calendar: &Calendar, input_date: i32, interval: i32) -> (i3
     }
 }
 
-#[pg_extern]
-unsafe fn kq_add_days_by_id(input_date: pgrx::Date, interval: i32, calendar_id: i64) -> Option<pgrx::Date> {
+#[pg_extern(parallel_safe)]
+fn kq_add_days_by_id(input_date: pgrx::Date, interval: i32, calendar_id: i64) -> Option<pgrx::Date> {
     ensure_cache_populated();
     match CALENDAR_ID_MAP.share().get(&calendar_id) {
         None => {
             return None;
         }
-        Some(calendar) => {
+        Some(calendar) => unsafe {
             let result_date = add_calendar_days(calendar, input_date.to_pg_epoch_days(), interval).0;
+            debug1!("result from add_calendar_days: {}", result_date);
             let result_date = pgrx::Date::from_pg_epoch_days(result_date);
             Some(result_date)
         }
     }
 }
 
-#[pg_extern]
+#[pg_extern(parallel_safe)]
 fn hello_kq_fx_calendar() -> &'static str {
     ensure_cache_populated();
     "Hello, kq_imcx"
