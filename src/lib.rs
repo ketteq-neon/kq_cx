@@ -56,7 +56,6 @@ static Q4_GET_ENTRIES: GucStrSetting = GucStrSetting::new(Some(DEF_Q4_GET_ENTRIE
 
 #[derive(Default, Clone, Debug)]
 pub struct Calendar {
-    calendar_id: i64, // may not be necessary
     dates: EntriesVec,
     page_size: i32,
     first_page_offset: i32,
@@ -67,8 +66,8 @@ unsafe impl PGRXSharedMemory for Calendar {}
 
 #[derive(Default, Clone, Debug)]
 pub struct CalendarControl {
-    calendar_id_count: i64,
-    entry_count: i64,
+    calendar_id_count: usize,
+    entry_count: usize,
     filled: bool
 }
 
@@ -183,8 +182,8 @@ fn ensure_cache_populated() {
         calendar_count
     );
     // Load calendars (id, name and entry count)
-    let mut calendar_count: i64 = 0;
-    let mut total_entry_count: i64 = 0;
+    let mut calendar_count: usize = 0;
+    let mut total_entry_count: usize = 0;
     Spi::connect(|client| {
         let mut calendar_id_map = CALENDAR_ID_MAP.exclusive();
         let mut calendar_name_id_map = CALENDAR_NAME_ID_MAP.exclusive();
@@ -192,20 +191,15 @@ fn ensure_cache_populated() {
         match select {
             Ok(tuple_table) => {
                 for row in tuple_table {
-                    let id: i64 = row[1].value().unwrap().unwrap();
-                    let entry_count: i64 = row[2].value().unwrap().unwrap();
-                    let name: &str = row[3].value().unwrap().unwrap();
+                    let id = row[1].value::<i64>().unwrap().unwrap();
+                    let entry_count= row[2].value::<i64>().unwrap().unwrap();
+                    let name = row[3].value::<&str>().unwrap().unwrap();
 
-                    let new_calendar = Calendar {
-                        calendar_id: id,
-                        ..Calendar::default()
-                    };
-
-                    calendar_id_map.insert(id, new_calendar).unwrap();
+                    calendar_id_map.insert(id, Calendar::default()).unwrap();
                     calendar_name_id_map.insert(name, id).unwrap();
 
+                    total_entry_count += entry_count as usize;
                     calendar_count += 1;
-                    total_entry_count += entry_count;
                 }
             }
             Err(spi_error) => {
@@ -298,13 +292,15 @@ fn ensure_cache_populated() {
                     }
                 }
 
-                debug1!("Page size for calendar {calendar_id} calculated {page_size_tmp}");
+                debug1!("Page size for calendar {calendar_id} calculated {page_size_tmp}, page_map: {} entries", page_map.len());
 
                 calendar.first_page_offset = first_page_offset;
                 calendar.page_size = page_size_tmp;
                 calendar.page_map.extend_from_slice(page_map.as_slice()).expect("cannot set page_map for calendar {calendar_id}");
             });
     }
+
+
 
     *CALENDAR_CONTROL.exclusive() = CalendarControl {
         entry_count: total_entry_count,
@@ -459,7 +455,7 @@ fn kq_calendar_display_page_map() -> TableIterator<
         .for_each(|(calendar_id, calendar)| {
             let calendar_name = get_calendar_name_from_id(CALENDAR_NAME_ID_MAP.share(), calendar_id);
             calendar.page_map.iter().for_each(
-                |index| unsafe {
+                |index| {
                     data.push((format!("{} ({})", calendar_id, calendar_name), *index as i64));
                 }
             );
