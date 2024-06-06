@@ -1,17 +1,16 @@
+use pgrx::debug1;
 use crate::Calendar;
 
 pub fn calculate_page_size(first_date: i32, last_date: i32, entry_count: i64) -> i32 {
-    let date_range = last_date - first_date;
-    let avg_entries_per_week_calendar = date_range as f64 / 7.0;
-    let entry_count_d = entry_count as f64;
+    let avg_entries_per_week_calendar = (last_date - first_date) as f64 / 7.0;
 
-    let mut page_size_tmp = 32; // monthly calendar
+    debug1!("avg_entries_per_week_calendar: {}", avg_entries_per_week_calendar);
 
-    if entry_count_d > avg_entries_per_week_calendar {
-        page_size_tmp = 16; // weekly calendar
+    return if entry_count as f64 > avg_entries_per_week_calendar {
+        16 // weekly
+    } else {
+        32 // montly
     }
-
-    page_size_tmp
 }
 
 
@@ -32,6 +31,9 @@ fn left_binary_search(arr: &[i32], mut left: i32, mut right: i32, value: i32) ->
 pub fn get_closest_index_from_left(date: i32, calendar: &Calendar) -> i32 {
     let page_map_index = (date / calendar.page_size) - calendar.first_page_offset;
 
+    debug1!("page_map_index: {}, date: {}, calendar.page_size: {}, calendar.first_page_offset: {}",
+        page_map_index, date, calendar.page_size, calendar.first_page_offset);
+
     if page_map_index >= calendar.page_map.len() as i32 {
         return -1 * calendar.dates.len() as i32 - 1;
     } else if page_map_index < 0 {
@@ -44,6 +46,8 @@ pub fn get_closest_index_from_left(date: i32, calendar: &Calendar) -> i32 {
     } else {
         calendar.dates.len()
     };
+
+    debug1!("get_closest_index_from_left: inclusive_start_index: {}, exclusive_end_index: {}", inclusive_start_index, exclusive_end_index);
 
     left_binary_search(&calendar.dates, inclusive_start_index as i32, (exclusive_end_index - 1) as i32, date)
 }

@@ -271,11 +271,12 @@ fn ensure_cache_populated() {
         let calendar_id_map = CALENDAR_ID_MAP.exclusive();
         calendar_id_map
             .iter()
-            .for_each(|(calendar_id, mut calendar)| {
+            .for_each(move |(calendar_id, mut calendar)| {
                 let first_date = *calendar.dates.first().unwrap();
                 let last_date = *calendar.dates.last().unwrap();
                 let entry_count = calendar.dates.len() as i64;
                 let page_size_tmp = math::calculate_page_size(first_date, last_date, entry_count);
+                debug1!("Page size (calculated: {}, first_date: {}, last_date: {}, entry_count: {}", page_size_tmp, first_date, last_date, entry_count);
                 if page_size_tmp == 0 {
                     error!("page size cannot be 0, cannot be calculated")
                 }
@@ -301,7 +302,7 @@ fn ensure_cache_populated() {
 
                 new_calendar.page_map.extend_from_slice(&*page_map).expect(&format!("cannot set page_map for calendar {calendar_id}"));
 
-                debug1!("Page size for calendar {calendar_id} calculated {page_size_tmp} and map created");
+                debug1!("Page size for calendar {calendar_id} calculated {page_size_tmp} and map created - New calendar: {:?}", new_calendar);
 
                 calendar = &new_calendar
             })
@@ -454,6 +455,7 @@ fn add_calendar_days(calendar: &Calendar, input_date: i32, interval: i32) -> (i3
         error!("cannot calculate without cache")
     }
     let prev_date_index = math::get_closest_index_from_left(input_date, calendar);
+
     debug1!("closest index from left: {}", prev_date_index);
     let result_date_index = prev_date_index + interval;
     debug1!("closest result index: {}", result_date_index);
