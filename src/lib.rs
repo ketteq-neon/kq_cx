@@ -36,7 +36,8 @@ type GucStrSetting = GucSetting<Option<&'static CStr>>;
 type EntriesVec = heapless::Vec<i32, MAX_ENTRIES_PER_CALENDAR>;
 type PageMapVec = heapless::Vec<usize, MAX_ENTRIES_PER_CALENDAR>;
 type CalendarIdMap = heapless::FnvIndexMap<i64, Calendar, MAX_CALENDARS>;
-type CalendarNameIdMap = heapless::FnvIndexMap<&'static str, i64, MAX_CALENDARS>;
+type CalendarNameIdMap = heapless::FnvIndexMap<CalendarName, i64, MAX_CALENDARS>;
+type CalendarName = heapless::String<128>;
 type PgDate = pgrx::Date;
 type CalendarInfo = (
     i64,    // CalendarID
@@ -205,9 +206,11 @@ fn ensure_cache_populated() {
                         .unwrap()
                         .expect("calendar_name cannot be null");
 
+                    let name_string: CalendarName = heapless::String::from(name);
+
                     // Create a new calendar
                     calendar_id_map.insert(id, Calendar::default()).unwrap();
-                    calendar_name_id_map.insert(name, id).unwrap();
+                    calendar_name_id_map.insert(name_string, id).unwrap();
 
                     total_entry_count += entry_count as usize;
                     calendar_count += 1;
@@ -550,7 +553,8 @@ unsafe fn kq_add_days_by_id(input_date: PgDate, interval: i32, calendar_id: i64)
 #[pg_extern(parallel_safe)]
 unsafe fn kq_add_days(input_date: Date, interval: i32, calendar_name: &str) -> Option<PgDate> {
     ensure_cache_populated();
-    match CALENDAR_NAME_ID_MAP.share().get(calendar_name) {
+    let calendar_name : CalendarName = heapless::String::from(calendar_name);
+    match CALENDAR_NAME_ID_MAP.share().get(&calendar_name) {
         None => {
             warning!("calendar_name = {} not found in cache", calendar_name);
             None
