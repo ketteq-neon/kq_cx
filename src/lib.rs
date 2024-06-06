@@ -201,13 +201,13 @@ fn ensure_cache_populated() {
                         .unwrap()
                         .expect("entry_count cannot be null");
                     let name = row[3]
-                        .value::<String>()
+                        .value::<&'static str>()
                         .unwrap()
                         .expect("calendar_name cannot be null");
 
                     // Create a new calendar
                     calendar_id_map.insert(id, Calendar::default()).unwrap();
-                    calendar_name_id_map.insert(&*name, id).unwrap();
+                    calendar_name_id_map.insert(name, id).unwrap();
 
                     total_entry_count += entry_count as usize;
                     calendar_count += 1;
