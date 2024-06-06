@@ -358,12 +358,12 @@ fn kq_invalidate_calendar_cache() -> &'static str {
 
 type CalendarInfo = (i64, String, i64, i32, i64);
 fn get_calendars_info() -> Vec<CalendarInfo> {
-    let calendar_name_map = CALENDAR_NAME_ID_MAP.share();
+    // let calendar_name_map = CALENDAR_NAME_ID_MAP.share();
     CALENDAR_ID_MAP
         .share()
         .iter()
         .map(|(calendar_id, calendar)| {
-            let calendar_name = get_calendar_name_from_id(calendar_name_map, calendar_id);
+            let calendar_name = get_calendar_name_from_id(CALENDAR_NAME_ID_MAP.share(), calendar_id);
             (*calendar_id, calendar_name, calendar.dates.len() as i64, calendar.page_size, calendar.page_map.len() as i64)
         })
         .collect()
