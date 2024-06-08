@@ -21,7 +21,7 @@ AND (table_name = 'calendar' OR table_name = 'calendar_date');"#;
 const DEF_Q2_GET_CALENDAR_IDS: &CStr = cr#"SELECT MIN(c.id), MAX(c.id) FROM plan.calendar c"#;
 
 const DEF_Q3_GET_CAL_ENTRY_COUNT: &CStr = cr#"SELECT cd.calendar_id, COUNT(*),
-(SELECT LOWER(ct."name") FROM plan.calendar ct WHERE ct.id = cd.calendar_id) "name"
+(SELECT LOWER(ct.xuid) FROM plan.calendar ct WHERE ct.id = cd.calendar_id) xuid
 FROM plan.calendar_date cd
 GROUP BY cd.calendar_id
 ORDER BY cd.calendar_id ASC;"#;
@@ -36,8 +36,8 @@ type GucStrSetting = GucSetting<Option<&'static CStr>>;
 type EntriesVec = heapless::Vec<i32, MAX_ENTRIES_PER_CALENDAR>;
 type PageMapVec = heapless::Vec<usize, MAX_ENTRIES_PER_CALENDAR>;
 type CalendarIdMap = heapless::FnvIndexMap<i64, Calendar, MAX_CALENDARS>;
-type CalendarNameIdMap = heapless::FnvIndexMap<CalendarName, i64, MAX_CALENDARS>;
-type CalendarName = heapless::String<128>;
+type CalendarXuidIdMap = heapless::FnvIndexMap<CalendarXuid, i64, MAX_CALENDARS>;
+type CalendarXuid = heapless::String<128>;
 type PgDate = pgrx::Date;
 type CalendarInfo = (
     i64,    // CalendarID
@@ -78,13 +78,13 @@ unsafe impl PGRXSharedMemory for CalendarControl {}
 // Shared Objects
 
 static CALENDAR_ID_MAP: PgLwLock<CalendarIdMap> = PgLwLock::new();
-static CALENDAR_NAME_ID_MAP: PgLwLock<CalendarNameIdMap> = PgLwLock::new();
+static CALENDAR_XUID_ID_MAP: PgLwLock<CalendarXuidIdMap> = PgLwLock::new();
 static CALENDAR_CONTROL: PgLwLock<CalendarControl> = PgLwLock::new();
 
 #[pg_guard]
 pub extern "C" fn _PG_init() {
     pg_shmem_init!(CALENDAR_ID_MAP);
-    pg_shmem_init!(CALENDAR_NAME_ID_MAP);
+    pg_shmem_init!(CALENDAR_XUID_ID_MAP);
     pg_shmem_init!(CALENDAR_CONTROL);
     init_gucs();
     info!("ketteQ In-Memory Calendar Cache Extension Loaded (kq_imcx)");
@@ -147,48 +147,12 @@ fn ensure_cache_populated() {
         return;
     }
     validate_compatible_db();
-    // Currency Min and Max ID Check
-    let currency_min_max: SpiResult<(Option<i64>, Option<i64>)> =
-        Spi::get_two(&get_guc_string(&Q2_GET_CALENDAR_IDS));
-    let (min_id, max_id): (i64, i64) = match currency_min_max {
-        Ok(values) => {
-            let min_val = match values.0 {
-                None => {
-                    error!("Cannot get currency min value or calendar table is empty")
-                }
-                Some(min_val) => min_val,
-            };
-            let max_val = match values.1 {
-                None => {
-                    error!("Cannot get currency min value or calendar table is empty")
-                }
-                Some(max_val) => max_val,
-            };
-            (min_val, max_val)
-        }
-        Err(spi_error) => {
-            error!(
-                "Cannot execute min/max ID values query or there is no calendars in the table. {}",
-                spi_error
-            )
-        }
-    };
-    if min_id > max_id {
-        error!("Min calendar ID cannot be greater that max calendar ID. Cannot init cache.")
-    }
-    let calendar_count = max_id - min_id + 1;
-    debug1!(
-        "Min ID: {}, Max ID: {}, Calendars: {}",
-        min_id,
-        max_id,
-        calendar_count
-    );
     // Load calendars (id, name and entry count)
     let mut calendar_count: usize = 0;
     let mut total_entry_count: usize = 0;
     Spi::connect(|client| {
         let mut calendar_id_map = CALENDAR_ID_MAP.exclusive();
-        let mut calendar_name_id_map = CALENDAR_NAME_ID_MAP.exclusive();
+        let mut calendar_name_id_map = CALENDAR_XUID_ID_MAP.exclusive();
         let select = client.select(&get_guc_string(&Q3_GET_CAL_ENTRY_COUNT), None, None);
         match select {
             Ok(tuple_table) => {
@@ -206,7 +170,7 @@ fn ensure_cache_populated() {
                         .unwrap()
                         .expect("calendar_name cannot be null");
 
-                    let name_string: CalendarName = heapless::String::from(name);
+                    let name_string: CalendarXuid = heapless::String::from(name);
 
                     // Create a new calendar
                     calendar_id_map.insert(id, Calendar::default()).unwrap();
@@ -302,6 +266,9 @@ fn ensure_cache_populated() {
             }
         }
     });
+    if total_entries != total_entry_count {
+        error!("cannot load all counted entries, {total_entries} loaded of {total_entry_count} counted")
+    }
     debug1!("{total_entries} entries loaded");
     // Page Size init
     {
@@ -373,14 +340,14 @@ fn validate_compatible_db() {
     }
 }
 
-fn get_calendar_name_from_id(
-    shared_calendar_id_map: PgLwLockShareGuard<CalendarNameIdMap>,
+fn get_calendar_xuid_from_id(
+    shared_calendar_xuid_id_map: PgLwLockShareGuard<CalendarXuidIdMap>,
     calendar_id: &i64,
 ) -> String {
-    shared_calendar_id_map
+    shared_calendar_xuid_id_map
         .iter()
         .find(|&(_, map_calendar_id)| map_calendar_id == calendar_id)
-        .map(|(m_calendar_name, _)| m_calendar_name.to_string())
+        .map(|(m_calendar_xuid, _)| m_calendar_xuid.to_string())
         .unwrap()
 }
 
@@ -389,11 +356,11 @@ fn get_calendars_info() -> Vec<CalendarInfo> {
         .share()
         .iter()
         .map(|(calendar_id, calendar)| {
-            let calendar_name =
-                get_calendar_name_from_id(CALENDAR_NAME_ID_MAP.share(), calendar_id);
+            let calendar_xuid =
+                get_calendar_xuid_from_id(CALENDAR_XUID_ID_MAP.share(), calendar_id);
             (
                 *calendar_id,
-                calendar_name,
+                calendar_xuid,
                 calendar.dates.len() as i64,
                 calendar.page_size,
                 calendar.page_map.len() as i64,
@@ -403,11 +370,11 @@ fn get_calendars_info() -> Vec<CalendarInfo> {
 }
 
 #[pg_extern(parallel_safe)]
-fn kq_calendar_cache_info() -> TableIterator<
+fn kq_cx_cache_info() -> TableIterator<
     'static,
     (
         name!(calendar_id, i64),
-        name!(calendar_name, String),
+        name!(calendar_xuid, String),
         name!(entries, i64),
         name!(page_size, i32),
         name!(page_map_entries, i64),
@@ -417,7 +384,7 @@ fn kq_calendar_cache_info() -> TableIterator<
 }
 
 #[pg_extern(parallel_safe)]
-fn kq_calendar_info() -> TableIterator<'static, (name!(property, String), name!(value, String))> {
+fn kq_cx_info() -> TableIterator<'static, (name!(property, String), name!(value, String))> {
     let control = CALENDAR_CONTROL.share().clone();
     let mut data: Vec<(String, String)> = vec![];
     data.push((
@@ -481,7 +448,7 @@ fn kq_calendar_info() -> TableIterator<'static, (name!(property, String), name!(
 }
 
 #[pg_extern(parallel_safe)]
-unsafe fn kq_calendar_display_cache(
+unsafe fn kq_cx_display_cache(
 ) -> TableIterator<'static, (name!(calendar, String), name!(entry, PgDate))> {
     let mut data: Vec<(String, PgDate)> = vec![];
     CALENDAR_ID_MAP
@@ -489,7 +456,7 @@ unsafe fn kq_calendar_display_cache(
         .iter()
         .for_each(|(calendar_id, calendar)| {
             let calendar_name =
-                get_calendar_name_from_id(CALENDAR_NAME_ID_MAP.share(), calendar_id);
+                get_calendar_xuid_from_id(CALENDAR_XUID_ID_MAP.share(), calendar_id);
             calendar.dates.iter().for_each(|date| {
                 data.push((
                     format!("{} ({})", calendar_id, calendar_name),
@@ -501,7 +468,7 @@ unsafe fn kq_calendar_display_cache(
 }
 
 #[pg_extern(parallel_safe)]
-fn kq_calendar_display_page_map(
+fn kq_cx_display_page_map(
 ) -> TableIterator<'static, (name!(calendar, String), name!(index, i64))> {
     let mut data: Vec<(String, i64)> = vec![];
     CALENDAR_ID_MAP
@@ -509,7 +476,7 @@ fn kq_calendar_display_page_map(
         .iter()
         .for_each(|(calendar_id, calendar)| {
             let calendar_name =
-                get_calendar_name_from_id(CALENDAR_NAME_ID_MAP.share(), calendar_id);
+                get_calendar_xuid_from_id(CALENDAR_XUID_ID_MAP.share(), calendar_id);
             calendar.page_map.iter().for_each(|index| {
                 data.push((
                     format!("{} ({})", calendar_id, calendar_name),
@@ -521,9 +488,9 @@ fn kq_calendar_display_page_map(
 }
 
 #[pg_extern(parallel_safe)]
-fn kq_invalidate_calendar_cache() -> &'static str {
+fn kq_cx_invalidate_cache() -> &'static str {
     debug1!("Waiting for lock...");
-    CALENDAR_NAME_ID_MAP.exclusive().clear();
+    CALENDAR_XUID_ID_MAP.exclusive().clear();
     debug1!("CALENDAR_NAME_ID_MAP cleared");
     CALENDAR_ID_MAP.exclusive().clear();
     debug1!("CALENDAR_ID_MAP cleared");
@@ -533,7 +500,7 @@ fn kq_invalidate_calendar_cache() -> &'static str {
 }
 
 #[pg_extern(parallel_safe)]
-unsafe fn kq_add_days_by_id(input_date: PgDate, interval: i32, calendar_id: i64) -> Option<PgDate> {
+unsafe fn kq_cx_add_days_by_id(input_date: PgDate, interval: i32, calendar_id: i64) -> Option<PgDate> {
     ensure_cache_populated();
     match CALENDAR_ID_MAP.share().get(&calendar_id) {
         None => {
@@ -551,12 +518,12 @@ unsafe fn kq_add_days_by_id(input_date: PgDate, interval: i32, calendar_id: i64)
 }
 
 #[pg_extern(parallel_safe)]
-unsafe fn kq_add_days(input_date: Date, interval: i32, calendar_name: &str) -> Option<PgDate> {
+unsafe fn kq_cx_add_days(input_date: Date, interval: i32, calendar_xuid: &str) -> Option<PgDate> {
     ensure_cache_populated();
-    let calendar_name : CalendarName = heapless::String::from(calendar_name);
-    match CALENDAR_NAME_ID_MAP.share().get(&calendar_name) {
+    let calendar_xuid: CalendarXuid = heapless::String::from(calendar_xuid);
+    match CALENDAR_XUID_ID_MAP.share().get(&calendar_xuid) {
         None => {
-            warning!("calendar_name = {} not found in cache", calendar_name);
+            warning!("calendar_xuid = {} not found in cache", calendar_xuid);
             None
         }
         Some(calendar_id) => {
@@ -587,7 +554,7 @@ mod tests {
 
     #[pg_test]
     fn test_hello_kq_fx_calendar() {
-        crate::kq_calendar_cache_info();
+        crate::kq_cx_cache_info();
         assert_eq!("Hello, kq_imcx", crate::hello_kq_fx_calendar());
     }
 }
