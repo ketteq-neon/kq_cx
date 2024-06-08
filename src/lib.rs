@@ -6,12 +6,13 @@ use pgrx::shmem::*;
 use pgrx::spi::SpiResult;
 use pgrx::{pg_shmem_init, GucContext, GucFlags, GucRegistry, GucSetting, PgLwLockShareGuard};
 use std::ffi::CStr;
+use std::mem;
 
 pgrx::pg_module_magic!();
 
 const MAX_CALENDARS: usize = 128;
-
 const MAX_ENTRIES_PER_CALENDAR: usize = 8 * 1024;
+const CALENDAR_XUID_MAX_LEN: usize = 128;
 
 const DEF_Q1_VALIDATION_QUERY: &CStr = cr#"SELECT COUNT(table_name) = 2
 FROM information_schema.tables
@@ -37,7 +38,7 @@ type EntriesVec = heapless::Vec<i32, MAX_ENTRIES_PER_CALENDAR>;
 type PageMapVec = heapless::Vec<usize, MAX_ENTRIES_PER_CALENDAR>;
 type CalendarIdMap = heapless::FnvIndexMap<i64, Calendar, MAX_CALENDARS>;
 type CalendarXuidIdMap = heapless::FnvIndexMap<CalendarXuid, i64, MAX_CALENDARS>;
-type CalendarXuid = heapless::String<128>;
+type CalendarXuid = heapless::String<CALENDAR_XUID_MAX_LEN>;
 type PgDate = pgrx::Date;
 type CalendarInfo = (
     i64,    // CalendarID
@@ -68,7 +69,7 @@ unsafe impl PGRXSharedMemory for Calendar {}
 
 #[derive(Default, Clone, Debug)]
 pub struct CalendarControl {
-    calendar_id_count: usize,
+    calendar_count: usize,
     entry_count: usize,
     filled: bool,
 }
@@ -165,12 +166,21 @@ fn ensure_cache_populated() {
                         .value::<i64>()
                         .unwrap()
                         .expect("entry_count cannot be null");
-                    let name = row[3]
+                    let xuid = row[3]
                         .value::<&'static str>()
                         .unwrap()
-                        .expect("calendar_name cannot be null");
+                        .expect("calendar_xuid cannot be null");
 
-                    let name_string: CalendarXuid = heapless::String::from(name);
+                    // Check entry count
+                    if MAX_ENTRIES_PER_CALENDAR < entry_count as usize {
+                        error!("cannot cache the calendar_id = {} (xuid = {}), it has too many entries ({}) for the current configuration. max_entries = {}",
+                            id,
+                            xuid,
+                            entry_count,
+                            MAX_ENTRIES_PER_CALENDAR);
+                    }
+
+                    let name_string: CalendarXuid = heapless::String::from(xuid);
 
                     // Create a new calendar
                     calendar_id_map.insert(id, Calendar::default()).unwrap();
@@ -193,7 +203,7 @@ fn ensure_cache_populated() {
         match select {
             Ok(tuple_table) => {
                 let mut prev_calendar_id = -1;
-                let mut current_calendar_entries: Vec<i32> = vec![];
+                let mut calendar_entries_vec: Vec<i32> = vec![];
 
                 for row in tuple_table {
                     let calendar_id = row[1]
@@ -219,16 +229,17 @@ fn ensure_cache_populated() {
                     if prev_calendar_id != calendar_id {
                         // Update the Calendar
                         if let Some(prev_calendar) = calendar_id_map.get_mut(&prev_calendar_id) {
+                            if Err(()) == prev_calendar
+                                .dates
+                                .extend_from_slice(calendar_entries_vec.as_slice()) {
+                                error!("cannot add entries to calendar_id = {prev_calendar_id}");
+                            };
+                            total_entries += prev_calendar.dates.len();
                             debug1!(
-                                ">> loaded {} entries into calendar_id = {}",
-                                current_calendar_entries.len(),
+                                ">> loaded {} entries into calendar_id = {}, entries cached = {total_entries}/{total_entry_count}",
+                                calendar_entries_vec.len(),
                                 prev_calendar_id
                             );
-                            prev_calendar
-                                .dates
-                                .extend_from_slice(current_calendar_entries.as_slice())
-                                .expect("cannot add entries to calendar");
-                            total_entries += prev_calendar.dates.len();
                         } else {
                             error!(
                                 "cannot add entries: calendar_id = {} not initialized",
@@ -236,24 +247,25 @@ fn ensure_cache_populated() {
                             )
                         }
                         prev_calendar_id = calendar_id;
-                        current_calendar_entries.clear();
+                        calendar_entries_vec.clear();
                     }
 
-                    current_calendar_entries.push(calendar_entry.to_pg_epoch_days());
+                    calendar_entries_vec.push(calendar_entry.to_pg_epoch_days());
                 }
 
                 // End reached, push last calendar entries
                 if let Some(prev_calendar) = calendar_id_map.get_mut(&prev_calendar_id) {
+                    if Err(()) == prev_calendar
+                        .dates
+                        .extend_from_slice(calendar_entries_vec.as_slice()) {
+                        error!("cannot add entries to calendar_id = {prev_calendar_id}");
+                    };
+                    total_entries += prev_calendar.dates.len();
                     debug1!(
-                        ">> loaded {} entries into calendar_id = {} >> load complete",
-                        current_calendar_entries.len(),
+                        ">> loaded {} entries into calendar_id = {}, entries cached = {total_entries}/{total_entry_count} >> load complete",
+                        calendar_entries_vec.len(),
                         prev_calendar_id
                     );
-                    prev_calendar
-                        .dates
-                        .extend_from_slice(current_calendar_entries.as_slice())
-                        .expect("cannot add entries to calendar");
-                    total_entries += prev_calendar.dates.len();
                 } else {
                     error!(
                         "cannot add entries: calendar_id = {} not initialized",
@@ -313,7 +325,7 @@ fn ensure_cache_populated() {
 
     *CALENDAR_CONTROL.exclusive() = CalendarControl {
         entry_count: total_entry_count,
-        calendar_id_count: calendar_count,
+        calendar_count,
         filled: true,
     };
 
@@ -402,14 +414,32 @@ fn kq_cx_info() -> TableIterator<'static, (name!(property, String), name!(value,
         env!("CARGO_PKG_VERSION").to_string(),
     ));
     if cfg!(debug_assertions) {
-        data.push(("Extension Build".to_string(), "Debug".to_string()));
+        data.push(("Build Type".to_string(), "Debug".to_string()));
     } else {
-        data.push(("Extension Build".to_string(), "Release".to_string()));
+        data.push(("Build Type".to_string(), "Release".to_string()));
     }
+    data.push(("Max Calendars".to_string(), format!("{}", MAX_CALENDARS)));
+    data.push(("Max Entries per calendar".to_string(), format!("{}", MAX_ENTRIES_PER_CALENDAR)));
+    let mut current_memory_use = control.entry_count * control.calendar_count * mem::size_of::<i32>();
+    current_memory_use += control.calendar_count * mem::size_of::<i64>();
+    CALENDAR_XUID_ID_MAP
+        .share()
+        .clone()
+        .iter()
+        .for_each(|(calendar_xuid, _)| {
+            current_memory_use += calendar_xuid.len();
+            current_memory_use += mem::size_of::<i64>();
+
+    });
+    data.push(("Current Memory Usage".to_string(), format!("{} bytes", current_memory_use)));
+    let mut max_memory_usage = MAX_CALENDARS * MAX_ENTRIES_PER_CALENDAR * mem::size_of::<i32>();
+    max_memory_usage += MAX_CALENDARS * mem::size_of::<i64>();
+    max_memory_usage += MAX_CALENDARS * CALENDAR_XUID_MAX_LEN;
+    data.push(("Max Memory".to_string(), format!("{} bytes", max_memory_usage)));
     data.push(("Cache Available".to_string(), control.filled.to_string()));
     data.push((
         "Slice Cache Size (Calendar ID Count)".to_string(),
-        control.calendar_id_count.to_string(),
+        control.calendar_count.to_string(),
     ));
     data.push((
         "Entry Cache Size (Entries)".to_string(),
