@@ -11,7 +11,7 @@ use std::mem;
 pgrx::pg_module_magic!();
 
 const MAX_CALENDARS: usize = 128;
-const MAX_ENTRIES_PER_CALENDAR: usize = 8 * 1024;
+const MAX_ENTRIES_PER_CALENDAR: usize = 512 * 1024;
 const CALENDAR_XUID_MAX_LEN: usize = 128;
 
 const DEF_Q1_VALIDATION_QUERY: &CStr = cr#"SELECT COUNT(table_name) = 2
@@ -521,7 +521,7 @@ fn kq_cx_display_page_map(
 fn kq_cx_invalidate_cache() -> &'static str {
     debug1!("Waiting for lock...");
     CALENDAR_XUID_ID_MAP.exclusive().clear();
-    debug1!("CALENDAR_NAME_ID_MAP cleared");
+    debug1!("CALENDAR_XUID_ID_MAP cleared");
     CALENDAR_ID_MAP.exclusive().clear();
     debug1!("CALENDAR_ID_MAP cleared");
     *CALENDAR_CONTROL.exclusive() = CalendarControl::default();
@@ -534,7 +534,7 @@ unsafe fn kq_cx_add_days_by_id(input_date: PgDate, interval: i32, calendar_id: i
     ensure_cache_populated();
     match CALENDAR_ID_MAP.share().get(&calendar_id) {
         None => {
-            warning!("calendar_id = {} not found in cache", calendar_id);
+            warning!("calendar_id = {calendar_id} not found in cache");
             None
         }
         Some(calendar) => {
@@ -553,7 +553,7 @@ unsafe fn kq_cx_add_days(input_date: Date, interval: i32, calendar_xuid: &str) -
     let calendar_xuid: CalendarXuid = heapless::String::from(calendar_xuid);
     match CALENDAR_XUID_ID_MAP.share().get(&calendar_xuid) {
         None => {
-            warning!("calendar_xuid = {} not found in cache", calendar_xuid);
+            warning!("calendar_xuid = {calendar_xuid} not found in cache");
             None
         }
         Some(calendar_id) => {
