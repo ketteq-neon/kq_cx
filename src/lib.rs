@@ -172,21 +172,21 @@ fn ensure_cache_populated() {
                         .expect("calendar_xuid cannot be null");
 
                     // // Check entry count
-                    // if MAX_ENTRIES_PER_CALENDAR < entry_count as usize {
-                    //     error!("cannot cache the calendar_id = {} (xuid = {}), it has too many entries ({}) for the current configuration. max_entries = {}",
-                    //         id,
-                    //         xuid,
-                    //         entry_count,
-                    //         MAX_ENTRIES_PER_CALENDAR);
-                    // }
+                    if MAX_ENTRIES_PER_CALENDAR < entry_count as usize {
+                        error!("cannot cache the calendar_id = {} (xuid = {}), it has too many entries ({}) for the current configuration. max_entries = {}",
+                            id,
+                            xuid,
+                            entry_count,
+                            MAX_ENTRIES_PER_CALENDAR);
+                    }
 
                     let name_string: CalendarXuid = heapless::String::from(xuid);
 
-                    let mut new_calendar = Calendar::default();
-                    new_calendar.dates.resize_default(entry_count as usize).expect("cannot resize dates vector");
+                    // let mut new_calendar = Calendar::default();
+                    // new_calendar.dates.resize_default(entry_count as usize).expect("cannot resize dates vector");
 
                     // Create a new calendar
-                    calendar_id_map.insert(id, new_calendar).unwrap();
+                    calendar_id_map.insert(id, Calendar::default()).unwrap();
                     calendar_name_id_map.insert(name_string, id).unwrap();
 
                     total_entry_count += entry_count as usize;
@@ -322,7 +322,7 @@ fn ensure_cache_populated() {
 
                 calendar.first_page_offset = first_page_offset;
                 calendar.page_size = page_size_tmp;
-                calendar.page_map.resize_default(page_map.len()).expect("cannot resize page map");
+                // calendar.page_map.resize_default(page_map.len()).expect("cannot resize page map");
                 calendar.page_map.extend_from_slice(page_map.as_slice()).expect("cannot set page_map for calendar");
             });
     }
