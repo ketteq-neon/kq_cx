@@ -11,6 +11,7 @@ use std::mem;
 pgrx::pg_module_magic!();
 
 const MAX_CALENDARS: usize = 128;
+const MAX_ENTRIES_PER_CALENDAR: usize = 20 * 1024;
 const CALENDAR_XUID_MAX_LEN: usize = 128;
 
 const DEF_Q1_VALIDATION_QUERY: &CStr = cr#"SELECT COUNT(table_name) = 2
@@ -33,8 +34,8 @@ ORDER BY cd.calendar_id asc, cd."date" ASC;"#;
 // Types
 
 type GucStrSetting = GucSetting<Option<&'static CStr>>;
-type EntriesVec = heapless::Vec<i32, 1>;
-type PageMapVec = heapless::Vec<usize, 1>;
+type EntriesVec = heapless::Vec<i32, MAX_ENTRIES_PER_CALENDAR>;
+type PageMapVec = heapless::Vec<usize, MAX_ENTRIES_PER_CALENDAR>;
 type CalendarIdMap = heapless::FnvIndexMap<i64, Calendar, MAX_CALENDARS>;
 type CalendarXuidIdMap = heapless::FnvIndexMap<CalendarXuid, i64, MAX_CALENDARS>;
 type CalendarXuid = heapless::String<CALENDAR_XUID_MAX_LEN>;
