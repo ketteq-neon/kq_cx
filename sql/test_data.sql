@@ -7,8 +7,8 @@ CREATE TABLE plan.calendar (
     id int8 NOT NULL,
     xuid text NOT NULL,
     "name" text NOT NULL,
-    CONSTRAINT calendar_id_pk PRIMARY KEY (id)
-    CONSTRAINT calendar_xuid_index UNIQUE (xuid)
+    CONSTRAINT calendar_id_pk PRIMARY KEY (id),
+    CONSTRAINT calendar_xuid_index UNIQUE (xuid),
     CONSTRAINT calendar_name_index UNIQUE (name)
 );
 
