@@ -11,7 +11,7 @@ use std::mem;
 pgrx::pg_module_magic!();
 
 const MAX_CALENDARS: usize = 128;
-const MAX_ENTRIES_PER_CALENDAR: usize = 128 * 1024;
+const MAX_ENTRIES_PER_CALENDAR: usize = 1;
 const CALENDAR_XUID_MAX_LEN: usize = 128;
 
 const DEF_Q1_VALIDATION_QUERY: &CStr = cr#"SELECT COUNT(table_name) = 2
@@ -34,8 +34,8 @@ ORDER BY cd.calendar_id asc, cd."date" ASC;"#;
 // Types
 
 type GucStrSetting = GucSetting<Option<&'static CStr>>;
-type EntriesVec = heapless::Vec<i32, MAX_ENTRIES_PER_CALENDAR>;
-type PageMapVec = heapless::Vec<usize, MAX_ENTRIES_PER_CALENDAR>;
+type EntriesVec = heapless::Vec<i32, 1>;
+type PageMapVec = heapless::Vec<usize, 1>;
 type CalendarIdMap = heapless::FnvIndexMap<i64, Calendar, MAX_CALENDARS>;
 type CalendarXuidIdMap = heapless::FnvIndexMap<CalendarXuid, i64, MAX_CALENDARS>;
 type CalendarXuid = heapless::String<CALENDAR_XUID_MAX_LEN>;
@@ -171,19 +171,22 @@ fn ensure_cache_populated() {
                         .unwrap()
                         .expect("calendar_xuid cannot be null");
 
-                    // Check entry count
-                    if MAX_ENTRIES_PER_CALENDAR < entry_count as usize {
-                        error!("cannot cache the calendar_id = {} (xuid = {}), it has too many entries ({}) for the current configuration. max_entries = {}",
-                            id,
-                            xuid,
-                            entry_count,
-                            MAX_ENTRIES_PER_CALENDAR);
-                    }
+                    // // Check entry count
+                    // if MAX_ENTRIES_PER_CALENDAR < entry_count as usize {
+                    //     error!("cannot cache the calendar_id = {} (xuid = {}), it has too many entries ({}) for the current configuration. max_entries = {}",
+                    //         id,
+                    //         xuid,
+                    //         entry_count,
+                    //         MAX_ENTRIES_PER_CALENDAR);
+                    // }
 
                     let name_string: CalendarXuid = heapless::String::from(xuid);
 
+                    let mut new_calendar = Calendar::default();
+                    new_calendar.dates.resize_default(entry_count as usize).expect("cannot resize dates vector");
+
                     // Create a new calendar
-                    calendar_id_map.insert(id, Calendar::default()).unwrap();
+                    calendar_id_map.insert(id, new_calendar).unwrap();
                     calendar_name_id_map.insert(name_string, id).unwrap();
 
                     total_entry_count += entry_count as usize;
@@ -319,6 +322,7 @@ fn ensure_cache_populated() {
 
                 calendar.first_page_offset = first_page_offset;
                 calendar.page_size = page_size_tmp;
+                calendar.page_map.resize_default(page_map.len()).expect("cannot resize page map");
                 calendar.page_map.extend_from_slice(page_map.as_slice()).expect("cannot set page_map for calendar");
             });
     }
@@ -419,7 +423,7 @@ fn kq_cx_info() -> TableIterator<'static, (name!(property, String), name!(value,
         data.push(("Build Type".to_string(), "Release".to_string()));
     }
     data.push(("Max Calendars".to_string(), format!("{}", MAX_CALENDARS)));
-    data.push(("Max Entries per calendar".to_string(), format!("{}", MAX_ENTRIES_PER_CALENDAR)));
+    // data.push(("Max Entries per calendar".to_string(), format!("{}", MAX_ENTRIES_PER_CALENDAR)));
     let mut current_memory_use = control.entry_count * control.calendar_count * mem::size_of::<i32>();
     current_memory_use += control.calendar_count * mem::size_of::<i64>();
     CALENDAR_XUID_ID_MAP
@@ -429,13 +433,20 @@ fn kq_cx_info() -> TableIterator<'static, (name!(property, String), name!(value,
         .for_each(|(calendar_xuid, _)| {
             current_memory_use += calendar_xuid.len();
             current_memory_use += mem::size_of::<i64>();
-
-    });
+        });
+    CALENDAR_ID_MAP
+        .share()
+        .clone()
+        .iter()
+        .for_each(|(_, calendar)| {
+            current_memory_use += calendar.page_map.len() * mem::size_of::<usize>();
+            current_memory_use += mem::size_of::<i64>();
+        });
     data.push(("Current Memory Usage".to_string(), format!("{} bytes", current_memory_use)));
-    let mut max_memory_usage = MAX_CALENDARS * MAX_ENTRIES_PER_CALENDAR * mem::size_of::<i32>();
-    max_memory_usage += MAX_CALENDARS * mem::size_of::<i64>();
-    max_memory_usage += MAX_CALENDARS * CALENDAR_XUID_MAX_LEN;
-    data.push(("Max Memory".to_string(), format!("{} bytes", max_memory_usage)));
+    // let mut max_memory_usage = MAX_CALENDARS * MAX_ENTRIES_PER_CALENDAR * mem::size_of::<i32>();
+    // max_memory_usage += MAX_CALENDARS * mem::size_of::<i64>();
+    // max_memory_usage += MAX_CALENDARS * CALENDAR_XUID_MAX_LEN;
+    // data.push(("Max Memory".to_string(), format!("{} bytes", max_memory_usage)));
     data.push(("Cache Available".to_string(), control.filled.to_string()));
     data.push((
         "Slice Cache Size (Calendar ID Count)".to_string(),
@@ -478,8 +489,7 @@ fn kq_cx_info() -> TableIterator<'static, (name!(property, String), name!(value,
 }
 
 #[pg_extern(parallel_safe)]
-unsafe fn kq_cx_display_cache(
-) -> TableIterator<'static, (name!(calendar, String), name!(entry, PgDate))> {
+unsafe fn kq_cx_display_cache() -> TableIterator<'static, (name!(calendar, String), name!(entry, PgDate))> {
     let mut data: Vec<(String, PgDate)> = vec![];
     CALENDAR_ID_MAP
         .share()
@@ -498,8 +508,7 @@ unsafe fn kq_cx_display_cache(
 }
 
 #[pg_extern(parallel_safe)]
-fn kq_cx_display_page_map(
-) -> TableIterator<'static, (name!(calendar, String), name!(index, i64))> {
+fn kq_cx_display_page_map() -> TableIterator<'static, (name!(calendar, String), name!(index, i64))> {
     let mut data: Vec<(String, i64)> = vec![];
     CALENDAR_ID_MAP
         .share()
