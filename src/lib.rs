@@ -11,7 +11,7 @@ use std::mem;
 pgrx::pg_module_magic!();
 
 const MAX_CALENDARS: usize = 128;
-const MAX_ENTRIES_PER_CALENDAR: usize = 20 * 1024;
+const MAX_ENTRIES_PER_CALENDAR: usize = 512 * 1024;
 const CALENDAR_XUID_MAX_LEN: usize = 128;
 
 const DEF_Q1_VALIDATION_QUERY: &CStr = cr#"SELECT COUNT(table_name) = 2
@@ -434,14 +434,14 @@ fn kq_cx_info() -> TableIterator<'static, (name!(property, String), name!(value,
             current_memory_use += calendar_xuid.len();
             current_memory_use += mem::size_of::<i64>();
         });
-    // CALENDAR_ID_MAP
-    //     .share()
-    //     .clone()
-    //     .iter()
-    //     .for_each(|(_, calendar)| {
-    //         current_memory_use += calendar.page_map.len() * mem::size_of::<usize>();
-    //         current_memory_use += mem::size_of::<i64>();
-    //     });
+    CALENDAR_ID_MAP
+        .share()
+        .clone()
+        .iter()
+        .for_each(|(_, calendar)| {
+            current_memory_use += calendar.page_map.len() * mem::size_of::<usize>();
+            current_memory_use += mem::size_of::<i64>();
+        });
     data.push(("Current Memory Usage".to_string(), format!("{} bytes", current_memory_use)));
     // let mut max_memory_usage = MAX_CALENDARS * MAX_ENTRIES_PER_CALENDAR * mem::size_of::<i32>();
     // max_memory_usage += MAX_CALENDARS * mem::size_of::<i64>();
