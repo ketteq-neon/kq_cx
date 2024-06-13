@@ -6,7 +6,6 @@ use pgrx::shmem::*;
 use pgrx::spi::SpiResult;
 use pgrx::{pg_shmem_init, GucContext, GucFlags, GucRegistry, GucSetting, PgLwLockShareGuard};
 use std::ffi::CStr;
-use std::mem;
 
 pgrx::pg_module_magic!();
 
@@ -182,11 +181,7 @@ fn ensure_cache_populated() {
 
                     // // Check entry count
                     if MAX_ENTRIES_PER_CALENDAR < entry_count as usize {
-                        debug1!("Only first {MAX_ENTRIES_PER_CALENDAR} entries will be cached from the total of {entry_count}",
-                            id,
-                            xuid,
-                            entry_count,
-                            MAX_ENTRIES_PER_CALENDAR);
+                        debug1!("Only first {MAX_ENTRIES_PER_CALENDAR} entries will be cached from the total of {entry_count}");
                     }
 
                     let name_string: CalendarXuid = heapless::String::from(xuid);
