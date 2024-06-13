@@ -27,9 +27,18 @@ FROM plan.calendar_date cd
 GROUP BY cd.calendar_id
 ORDER BY cd.calendar_id ASC;"#;
 
+// const DEF_Q4_GET_ENTRIES: &CStr = cr#"SELECT cd.calendar_id, cd."date"
+// FROM plan.calendar_date cd
+// ORDER BY cd.calendar_id asc, cd."date" ASC;"#;
+
 const DEF_Q4_GET_ENTRIES: &CStr = cr#"SELECT cd.calendar_id, cd."date"
 FROM plan.calendar_date cd
-ORDER BY cd.calendar_id asc, cd."date" ASC;"#;
+WHERE cd."date" >= (
+    SELECT date_trunc('day', dd."date") - interval '5 years'
+    FROM plan.data_date dd
+)
+ORDER BY cd.calendar_id ASC, cd."date" ASC
+LIMIT 5000;"#;
 
 // Types
 
@@ -173,7 +182,7 @@ fn ensure_cache_populated() {
 
                     // // Check entry count
                     if MAX_ENTRIES_PER_CALENDAR < entry_count as usize {
-                        error!("cannot cache the calendar_id = {} (xuid = {}), it has too many entries ({}) for the current configuration. max_entries = {}",
+                        debug1!("Only first {MAX_ENTRIES_PER_CALENDAR} entries will be cached from the total of {entry_count}",
                             id,
                             xuid,
                             entry_count,
