@@ -433,25 +433,25 @@ fn kq_cx_info() -> TableIterator<'static, (name!(property, String), name!(value,
     }
     data.push(("Max Calendars".to_string(), format!("{}", MAX_CALENDARS)));
     data.push(("Max Entries per calendar".to_string(), format!("{}", MAX_ENTRIES_PER_CALENDAR)));
-    let mut current_memory_use = control.entry_count * control.calendar_count * mem::size_of::<i32>();
-    // current_memory_use += control.calendar_count * mem::size_of::<i64>();
-    CALENDAR_XUID_ID_MAP
-        .share()
-        .clone()
-        .iter()
-        .for_each(|(calendar_xuid, _)| {
-            current_memory_use += calendar_xuid.len();
-            current_memory_use += mem::size_of::<i64>();
-        });
-    CALENDAR_ID_MAP
-        .share()
-        .clone()
-        .iter()
-        .for_each(|(_, calendar)| {
-            current_memory_use += calendar.page_map.len() * mem::size_of::<usize>();
-            current_memory_use += mem::size_of::<i64>();
-        });
-    data.push(("Current Memory Usage".to_string(), format!("{} bytes", current_memory_use)));
+    // let mut current_memory_use = control.entry_count * control.calendar_count * mem::size_of::<i32>();
+    // // current_memory_use += control.calendar_count * mem::size_of::<i64>();
+    // CALENDAR_XUID_ID_MAP
+    //     .share()
+    //     .clone()
+    //     .iter()
+    //     .for_each(|(calendar_xuid, _)| {
+    //         current_memory_use += calendar_xuid.len();
+    //         current_memory_use += mem::size_of::<i64>();
+    //     });
+    // CALENDAR_ID_MAP
+    //     .share()
+    //     .clone()
+    //     .iter()
+    //     .for_each(|(_, calendar)| {
+    //         current_memory_use += calendar.page_map.len() * mem::size_of::<usize>();
+    //         current_memory_use += mem::size_of::<i64>();
+    //     });
+    // data.push(("Current Memory Usage".to_string(), format!("{} bytes", current_memory_use)));
     // let mut max_memory_usage = MAX_CALENDARS * MAX_ENTRIES_PER_CALENDAR * mem::size_of::<i32>();
     // max_memory_usage += MAX_CALENDARS * mem::size_of::<i64>();
     // max_memory_usage += MAX_CALENDARS * CALENDAR_XUID_MAX_LEN;
