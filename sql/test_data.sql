@@ -24,7 +24,15 @@ ALTER TABLE plan.calendar_date
         FOREIGN KEY (calendar_id) REFERENCES plan.calendar(id)
             ON DELETE CASCADE;
 
+CREATE TABLE plan.data_date (
+    "date" DATE NOT NULL
+);
+
 --
+
+INSERT INTO plan.data_date ("date")
+VALUES
+    (NOW());
 
 INSERT INTO plan.calendar (id, "name", xuid)
 VALUES

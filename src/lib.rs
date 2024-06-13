@@ -11,7 +11,7 @@ use std::mem;
 pgrx::pg_module_magic!();
 
 const MAX_CALENDARS: usize = 128;
-const MAX_ENTRIES_PER_CALENDAR: usize = 20 * 1024;
+const MAX_ENTRIES_PER_CALENDAR: usize = 5 * 1024;
 const CALENDAR_XUID_MAX_LEN: usize = 128;
 
 const DEF_Q1_VALIDATION_QUERY: &CStr = cr#"SELECT COUNT(table_name) = 2
@@ -27,9 +27,18 @@ FROM plan.calendar_date cd
 GROUP BY cd.calendar_id
 ORDER BY cd.calendar_id ASC;"#;
 
+// const DEF_Q4_GET_ENTRIES: &CStr = cr#"SELECT cd.calendar_id, cd."date"
+// FROM plan.calendar_date cd
+// ORDER BY cd.calendar_id asc, cd."date" ASC;"#;
+
 const DEF_Q4_GET_ENTRIES: &CStr = cr#"SELECT cd.calendar_id, cd."date"
 FROM plan.calendar_date cd
-ORDER BY cd.calendar_id asc, cd."date" ASC;"#;
+WHERE cd."date" >= (
+    SELECT date_trunc('day', dd."date") - interval '5 years'
+    FROM plan.data_date dd
+)
+ORDER BY cd.calendar_id ASC, cd."date" ASC
+LIMIT 5000;"#;
 
 // Types
 
@@ -173,7 +182,7 @@ fn ensure_cache_populated() {
 
                     // // Check entry count
                     if MAX_ENTRIES_PER_CALENDAR < entry_count as usize {
-                        error!("cannot cache the calendar_id = {} (xuid = {}), it has too many entries ({}) for the current configuration. max_entries = {}",
+                        debug1!("Only first {MAX_ENTRIES_PER_CALENDAR} entries will be cached from the total of {entry_count}",
                             id,
                             xuid,
                             entry_count,
@@ -423,26 +432,26 @@ fn kq_cx_info() -> TableIterator<'static, (name!(property, String), name!(value,
         data.push(("Build Type".to_string(), "Release".to_string()));
     }
     data.push(("Max Calendars".to_string(), format!("{}", MAX_CALENDARS)));
-    // data.push(("Max Entries per calendar".to_string(), format!("{}", MAX_ENTRIES_PER_CALENDAR)));
-    // let mut current_memory_use = control.entry_count * control.calendar_count * mem::size_of::<i32>();
+    data.push(("Max Entries per calendar".to_string(), format!("{}", MAX_ENTRIES_PER_CALENDAR)));
+    let mut current_memory_use = control.entry_count * control.calendar_count * mem::size_of::<i32>();
     // current_memory_use += control.calendar_count * mem::size_of::<i64>();
-    // CALENDAR_XUID_ID_MAP
-    //     .share()
-    //     .clone()
-    //     .iter()
-    //     .for_each(|(calendar_xuid, _)| {
-    //         current_memory_use += calendar_xuid.len();
-    //         current_memory_use += mem::size_of::<i64>();
-    //     });
-    // CALENDAR_ID_MAP
-    //     .share()
-    //     .clone()
-    //     .iter()
-    //     .for_each(|(_, calendar)| {
-    //         current_memory_use += calendar.page_map.len() * mem::size_of::<usize>();
-    //         current_memory_use += mem::size_of::<i64>();
-    //     });
-    // data.push(("Current Memory Usage".to_string(), format!("{} bytes", current_memory_use)));
+    CALENDAR_XUID_ID_MAP
+        .share()
+        .clone()
+        .iter()
+        .for_each(|(calendar_xuid, _)| {
+            current_memory_use += calendar_xuid.len();
+            current_memory_use += mem::size_of::<i64>();
+        });
+    CALENDAR_ID_MAP
+        .share()
+        .clone()
+        .iter()
+        .for_each(|(_, calendar)| {
+            current_memory_use += calendar.page_map.len() * mem::size_of::<usize>();
+            current_memory_use += mem::size_of::<i64>();
+        });
+    data.push(("Current Memory Usage".to_string(), format!("{} bytes", current_memory_use)));
     // let mut max_memory_usage = MAX_CALENDARS * MAX_ENTRIES_PER_CALENDAR * mem::size_of::<i32>();
     // max_memory_usage += MAX_CALENDARS * mem::size_of::<i64>();
     // max_memory_usage += MAX_CALENDARS * CALENDAR_XUID_MAX_LEN;
