@@ -471,16 +471,16 @@ fn kq_cx_info() -> TableIterator<'static, (name!(property, String), name!(value,
 
     get_calendars_info().iter().for_each(|calendar_info| {
         data.push((
-            format!("  Calendar {} ({})", calendar_info.0, calendar_info.1),
+            format!("Calendar id={} xuid={}", calendar_info.0, calendar_info.1),
             "".to_string(),
         ));
-        data.push(("      Entries".to_string(), format!("{}", calendar_info.2)));
+        data.push(("    Entry Count".to_string(), format!("{}", calendar_info.2)));
         data.push((
-            "      Page Size".to_string(),
+            "    Page Size".to_string(),
             format!("{}", calendar_info.3),
         ));
         data.push((
-            "      Page Map Entries".to_string(),
+            "    Page Map Entry Count".to_string(),
             format!("{}", calendar_info.4),
         ));
     });
