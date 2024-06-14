@@ -189,16 +189,18 @@ fn ensure_cache_populated() {
                             MAX_ENTRIES_PER_CALENDAR);
                     }
 
-                    let name_string: CalendarXuid = heapless::String::from(xuid);
-
-                    // let mut new_calendar = Calendar::default();
-                    // new_calendar.dates.resize_default(entry_count as usize).expect("cannot resize dates vector");
+                    let name_string = CalendarXuid::from(xuid);
 
                     // Create a new calendar
                     calendar_id_map.insert(id, Calendar::default()).unwrap();
                     calendar_name_id_map.insert(name_string, id).unwrap();
 
-                    total_entry_count += entry_count as usize;
+                    if entry_count < 5000 {
+                        total_entry_count += entry_count as usize;
+                    } else {
+                        total_entry_count += 5000;
+                    }
+
                     calendar_count += 1;
                 }
             }
