@@ -30,14 +30,21 @@ ORDER BY cd.calendar_id ASC;"#;
 // FROM plan.calendar_date cd
 // ORDER BY cd.calendar_id asc, cd."date" ASC;"#;
 
-const DEF_Q4_GET_ENTRIES: &CStr = cr#"SELECT cd.calendar_id, cd."date"
-FROM plan.calendar_date cd
-WHERE cd."date" >= (
-    SELECT date_trunc('day', dd."date") - interval '5 years'
-    FROM plan.data_date dd
+const DEF_Q4_GET_ENTRIES: &CStr = cr#"WITH ranked_dates AS (
+    SELECT
+        cd.calendar_id,
+        cd."date",
+        ROW_NUMBER() OVER (PARTITION BY cd.calendar_id ORDER BY cd."date" ASC) as row_num
+    FROM plan.calendar_date cd
+    WHERE cd."date" >= (
+        SELECT date_trunc('day', dd."date") - interval '5 years'
+        FROM plan.data_date dd
+    )
 )
-ORDER BY cd.calendar_id ASC, cd."date" ASC
-LIMIT 5000;"#;
+SELECT calendar_id, "date"
+FROM ranked_dates
+WHERE row_num <= 5000
+ORDER BY calendar_id ASC, "date" ASC;"#;
 
 // Types
 
