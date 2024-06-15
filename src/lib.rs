@@ -592,9 +592,8 @@ unsafe fn kq_cx_add_days(input_date: Date, interval: i32, calendar_xuid: &str) -
 }
 
 #[pg_extern(parallel_safe)]
-fn hello_kq_fx_calendar() -> &'static str {
-    ensure_cache_populated();
-    "Hello, kq_imcx"
+fn kq_cx_populate_cache() {
+    ensure_cache_populated()
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -607,7 +606,8 @@ mod tests {
     #[pg_test]
     fn test_hello_kq_fx_calendar() {
         crate::kq_cx_cache_info();
-        assert_eq!("Hello, kq_imcx", crate::hello_kq_fx_calendar());
+        crate::kq_cx_populate_cache();
+        crate::kq_cx_cache_info();
     }
 }
 
