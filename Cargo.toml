@@ -1,5 +1,5 @@
 [package]
-name = "kq_imcx"
+name = "kq_cx"
 version = "0.0.1"
 edition = "2021"
 publish = false
