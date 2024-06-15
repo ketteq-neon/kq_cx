@@ -43,7 +43,7 @@ const DEF_Q4_GET_ENTRIES: &CStr = cr#"WITH ranked_dates AS (
 )
 SELECT calendar_id, "date"
 FROM ranked_dates
-WHERE row_num <= 5000
+WHERE row_num <= 5120
 ORDER BY calendar_id ASC, "date" ASC;"#;
 
 // Types
@@ -185,11 +185,6 @@ fn ensure_cache_populated() {
                         .value::<&'static str>()
                         .unwrap()
                         .expect("calendar_xuid cannot be null");
-
-                    // // Check entry count
-                    if MAX_ENTRIES_PER_CALENDAR < entry_count as usize {
-                        debug1!("Only first {MAX_ENTRIES_PER_CALENDAR} entries will be cached from the total of {entry_count}");
-                    }
 
                     let name_string = CalendarXuid::from(xuid);
 
