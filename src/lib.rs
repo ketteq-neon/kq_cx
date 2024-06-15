@@ -231,7 +231,7 @@ fn ensure_cache_populated() {
                         .unwrap()
                         .expect("calendar_entry cannot be null");
 
-                    debug1!(
+                    debug2!(
                         ">> got entry: {calendar_id} => {calendar_entry} ({})",
                         calendar_entry.to_pg_epoch_days()
                     );
