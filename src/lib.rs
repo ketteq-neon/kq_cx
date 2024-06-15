@@ -295,7 +295,7 @@ fn ensure_cache_populated() {
         }
     });
     if total_entries != total_entry_count {
-        error!("cannot load all counted entries, {total_entries} loaded of {total_entry_count} counted")
+        warning!("entries truncated, {total_entries} loaded of {total_entry_count}")
     }
     debug1!("{total_entries} entries loaded");
     // Page Size init
