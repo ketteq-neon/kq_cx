@@ -621,7 +621,7 @@ pub mod pg_test {
 
     pub fn postgresql_conf_options() -> Vec<&'static str> {
         vec![
-            "shared_preload_libraries = 'kq_imcx'",
+            "shared_preload_libraries = 'kq_cx'",
             "log_min_messages = debug1",
             "log_min_error_statement = debug1",
             "client_min_messages = debug1",
