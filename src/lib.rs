@@ -192,10 +192,10 @@ fn ensure_cache_populated() {
                     calendar_id_map.insert(id, Calendar::default()).unwrap();
                     calendar_name_id_map.insert(name_string, id).unwrap();
 
-                    if entry_count < 5000 {
+                    if entry_count < MAX_ENTRIES_PER_CALENDAR as i64 {
                         total_entry_count += entry_count as usize;
                     } else {
-                        total_entry_count += 5000;
+                        total_entry_count += MAX_ENTRIES_PER_CALENDAR;
                     }
 
                     calendar_count += 1;
