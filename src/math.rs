@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use crate::{Calendar, CALENDAR_CONTROL};
-use pgrx::{debug2, error};
+use pgrx::{error};
 
 // Original C Source
 // int32 calculate_page_size(int32 first_date, int32 last_date, int32 entry_count) {
