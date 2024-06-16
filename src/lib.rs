@@ -248,7 +248,7 @@ fn ensure_cache_populated() {
                                 error!("cannot add entries to calendar_id = {prev_calendar_id}");
                             };
                             total_entries += prev_calendar.dates.len();
-                            debug1!(
+                            debug2!(
                                 ">> loaded {} entries into calendar_id = {}, entries cached = {total_entries}/{total_entry_count}",
                                 calendar_entries_vec.len(),
                                 prev_calendar_id
@@ -276,7 +276,7 @@ fn ensure_cache_populated() {
                         error!("cannot add entries to calendar_id = {prev_calendar_id}");
                     };
                     total_entries += prev_calendar.dates.len();
-                    debug1!(
+                    debug2!(
                         ">> loaded {} entries into calendar_id = {}, entries cached = {total_entries}/{total_entry_count} >> load complete",
                         calendar_entries_vec.len(),
                         prev_calendar_id
@@ -296,7 +296,7 @@ fn ensure_cache_populated() {
     if total_entries != total_entry_count {
         warning!("entries truncated, {total_entries} loaded of {total_entry_count}")
     }
-    debug1!("{total_entries} entries loaded");
+    debug2!("{total_entries} entries loaded");
     // Page Size init
     {
         CALENDAR_ID_MAP
@@ -330,7 +330,7 @@ fn ensure_cache_populated() {
                     }
                 }
 
-                debug1!("page_map created: calendar_id = {calendar_id}, page_size = {page_size_tmp}, page_map.len() = {}", page_map.len());
+                debug2!("page_map created: calendar_id = {calendar_id}, page_size = {page_size_tmp}, page_map.len() = {}", page_map.len());
 
                 calendar.first_page_offset = first_page_offset;
                 calendar.page_size = page_size_tmp;
@@ -345,7 +345,7 @@ fn ensure_cache_populated() {
         filled: true,
     };
 
-    debug1!("cache ready. calendars = {calendar_count}, entries = {total_entry_count}")
+    info!("cache ready. calendars = {calendar_count}, entries = {total_entry_count}")
 }
 
 /// Checks if the schema is compatible with the extension.
