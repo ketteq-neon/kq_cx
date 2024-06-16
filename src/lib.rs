@@ -192,7 +192,6 @@ fn ensure_cache_populated() {
                     calendar_id_map.insert(id, Calendar::default()).unwrap();
                     calendar_name_id_map.insert(name_string, id).unwrap();
 
-
                     if entry_count < MAX_ENTRIES_PER_CALENDAR as i64 {
                         total_entry_count += entry_count as usize;
                     } else {
@@ -201,7 +200,9 @@ fn ensure_cache_populated() {
 
                     calendar_count += 1;
 
-                    debug1!("calendar #{calendar_count} added {id} ({xuid}) entries = {entry_count}");
+                    debug1!(
+                        "calendar #{calendar_count} added {id} ({xuid}) entries = {entry_count}"
+                    );
                 }
             }
             Err(spi_error) => {
@@ -243,9 +244,11 @@ fn ensure_cache_populated() {
                     if prev_calendar_id != calendar_id {
                         // Update the Calendar
                         if let Some(prev_calendar) = calendar_id_map.get_mut(&prev_calendar_id) {
-                            if Err(()) == prev_calendar
-                                .dates
-                                .extend_from_slice(calendar_entries_vec.as_slice()) {
+                            if Err(())
+                                == prev_calendar
+                                    .dates
+                                    .extend_from_slice(calendar_entries_vec.as_slice())
+                            {
                                 error!("cannot add entries to calendar_id = {prev_calendar_id}");
                             };
                             total_entries += prev_calendar.dates.len();
@@ -269,9 +272,11 @@ fn ensure_cache_populated() {
 
                 // End reached, push last calendar entries
                 if let Some(prev_calendar) = calendar_id_map.get_mut(&prev_calendar_id) {
-                    if Err(()) == prev_calendar
-                        .dates
-                        .extend_from_slice(calendar_entries_vec.as_slice()) {
+                    if Err(())
+                        == prev_calendar
+                            .dates
+                            .extend_from_slice(calendar_entries_vec.as_slice())
+                    {
                         error!("cannot add entries to calendar_id = {prev_calendar_id}");
                     };
                     total_entries += prev_calendar.dates.len();
@@ -434,7 +439,10 @@ fn kq_cx_info() -> TableIterator<'static, (name!(property, String), name!(value,
         data.push(("Build Type".to_string(), "Release".to_string()));
     }
     data.push(("Max Calendars".to_string(), format!("{}", MAX_CALENDARS)));
-    data.push(("Max Entries per calendar".to_string(), format!("{}", MAX_ENTRIES_PER_CALENDAR)));
+    data.push((
+        "Max Entries per calendar".to_string(),
+        format!("{}", MAX_ENTRIES_PER_CALENDAR),
+    ));
     // let mut current_memory_use = control.entry_count * control.calendar_count * mem::size_of::<i32>();
     // // current_memory_use += control.calendar_count * mem::size_of::<i64>();
     // CALENDAR_XUID_ID_MAP
@@ -485,11 +493,11 @@ fn kq_cx_info() -> TableIterator<'static, (name!(property, String), name!(value,
             format!("Calendar id={} xuid={}", calendar_info.0, calendar_info.1),
             "".to_string(),
         ));
-        data.push(("    Entry Count".to_string(), format!("{}", calendar_info.2)));
         data.push((
-            "    Page Size".to_string(),
-            format!("{}", calendar_info.3),
+            "    Entry Count".to_string(),
+            format!("{}", calendar_info.2),
         ));
+        data.push(("    Page Size".to_string(), format!("{}", calendar_info.3)));
         data.push((
             "    Page Map Entry Count".to_string(),
             format!("{}", calendar_info.4),
@@ -500,7 +508,8 @@ fn kq_cx_info() -> TableIterator<'static, (name!(property, String), name!(value,
 }
 
 #[pg_extern(parallel_safe)]
-unsafe fn kq_cx_display_cache() -> TableIterator<'static, (name!(calendar, String), name!(entry, PgDate))> {
+unsafe fn kq_cx_display_cache(
+) -> TableIterator<'static, (name!(calendar, String), name!(entry, PgDate))> {
     let mut data: Vec<(String, PgDate)> = vec![];
     CALENDAR_ID_MAP
         .share()
@@ -519,7 +528,8 @@ unsafe fn kq_cx_display_cache() -> TableIterator<'static, (name!(calendar, Strin
 }
 
 #[pg_extern(parallel_safe)]
-fn kq_cx_display_page_map() -> TableIterator<'static, (name!(calendar, String), name!(index, i64))> {
+fn kq_cx_display_page_map() -> TableIterator<'static, (name!(calendar, String), name!(index, i64))>
+{
     let mut data: Vec<(String, i64)> = vec![];
     CALENDAR_ID_MAP
         .share()
@@ -568,7 +578,11 @@ unsafe fn kq_cx_add_days(input_date: PgDate, interval: i32, calendar_id: i64) ->
 }
 
 #[pg_extern(parallel_safe)]
-unsafe fn kq_cx_add_days_xuid(input_date: Date, interval: i32, calendar_xuid: &str) -> Option<PgDate> {
+unsafe fn kq_cx_add_days_xuid(
+    input_date: Date,
+    interval: i32,
+    calendar_xuid: &str,
+) -> Option<PgDate> {
     ensure_cache_populated();
     let calendar_xuid = calendar_xuid.to_lowercase();
     let calendar_xuid: &str = &calendar_xuid;
