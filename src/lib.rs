@@ -103,12 +103,12 @@ pub extern "C" fn _PG_init() {
     pg_shmem_init!(CALENDAR_XUID_ID_MAP);
     pg_shmem_init!(CALENDAR_CONTROL);
     init_gucs();
-    info!("ketteQ In-Memory Calendar Cache Extension Loaded (kq_imcx)");
+    info!("ketteQ In-Memory Calendar Cache Extension Loaded (kq_cx)");
 }
 
 #[pg_guard]
 pub extern "C" fn _PG_fini() {
-    info!("Unloaded ketteQ In-Memory Calendar Cache Extension (kq_imcx)");
+    info!("Unloaded ketteQ In-Memory Calendar Cache Extension (kq_cx)");
 }
 
 fn init_gucs() {
@@ -192,6 +192,7 @@ fn ensure_cache_populated() {
                     calendar_id_map.insert(id, Calendar::default()).unwrap();
                     calendar_name_id_map.insert(name_string, id).unwrap();
 
+
                     if entry_count < MAX_ENTRIES_PER_CALENDAR as i64 {
                         total_entry_count += entry_count as usize;
                     } else {
@@ -199,6 +200,8 @@ fn ensure_cache_populated() {
                     }
 
                     calendar_count += 1;
+
+                    debug1!("calendar #{calendar_count} added {id} ({xuid}) entries = {entry_count}");
                 }
             }
             Err(spi_error) => {
@@ -547,12 +550,12 @@ fn kq_cx_invalidate_cache() -> &'static str {
 }
 
 #[pg_extern(parallel_safe)]
-unsafe fn kq_cx_add_days_by_id(input_date: PgDate, interval: i32, calendar_id: i64) -> Option<PgDate> {
+unsafe fn kq_cx_add_days(input_date: PgDate, interval: i32, calendar_id: i64) -> Option<PgDate> {
     ensure_cache_populated();
     match CALENDAR_ID_MAP.share().get(&calendar_id) {
         None => {
             warning!("calendar_id = {calendar_id} not found in cache");
-            None
+            Some(input_date)
         }
         Some(calendar) => {
             let result_date =
@@ -565,13 +568,15 @@ unsafe fn kq_cx_add_days_by_id(input_date: PgDate, interval: i32, calendar_id: i
 }
 
 #[pg_extern(parallel_safe)]
-unsafe fn kq_cx_add_days(input_date: Date, interval: i32, calendar_xuid: &str) -> Option<PgDate> {
+unsafe fn kq_cx_add_days_xuid(input_date: Date, interval: i32, calendar_xuid: &str) -> Option<PgDate> {
     ensure_cache_populated();
+    let calendar_xuid = calendar_xuid.to_lowercase();
+    let calendar_xuid: &str = &calendar_xuid;
     let calendar_xuid: CalendarXuid = heapless::String::from(calendar_xuid);
     match CALENDAR_XUID_ID_MAP.share().get(&calendar_xuid) {
         None => {
             warning!("calendar_xuid = {calendar_xuid} not found in cache");
-            None
+            Some(input_date)
         }
         Some(calendar_id) => {
             let calendar = CALENDAR_ID_MAP
