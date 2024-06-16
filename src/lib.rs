@@ -199,10 +199,6 @@ fn ensure_cache_populated() {
                     }
 
                     calendar_count += 1;
-
-                    debug1!(
-                        "calendar #{calendar_count} added {id} ({xuid}) entries = {entry_count}"
-                    );
                 }
             }
             Err(spi_error) => {
