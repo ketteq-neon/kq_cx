@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use crate::{Calendar, CALENDAR_CONTROL};
-use pgrx::error;
+use pgrx::{debug2, error};
 
 // Original C Source
 // int32 calculate_page_size(int32 first_date, int32 last_date, int32 entry_count) {
@@ -159,6 +159,11 @@ pub fn add_calendar_days(
     if !CALENDAR_CONTROL.share().filled {
         error!("cannot calculate without cache")
     }
+
+    if calendar.dates.len() == 0 {
+        return (input_date + interval, 0, 0)
+    }
+
     let prev_date_index = get_closest_index_from_left(input_date, calendar);
 
     // debug1!("closest index from left: {}", prev_date_index);
