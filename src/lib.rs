@@ -197,6 +197,9 @@ fn ensure_cache_populated() {
                         .unwrap()
                         .expect("calendar_xuid cannot be null");
 
+                    debug1!("adding calendar {id} ({xuid}) with total {entry_count} (truncated if > {MAX_ENTRIES_PER_CALENDAR}) entries");
+
+
                     let name_string = CalendarXuid::from(xuid);
 
                     // Create a new calendar
@@ -209,7 +212,7 @@ fn ensure_cache_populated() {
                         total_entry_count += MAX_ENTRIES_PER_CALENDAR;
                     }
 
-                    debug1!("added calendar {id} with total {entry_count} (truncated if > {MAX_ENTRIES_PER_CALENDAR}) entries");
+                    debug1!("added calendar {id} ({xuid}) with total {entry_count} (truncated if > {MAX_ENTRIES_PER_CALENDAR}) entries");
 
                     calendar_count += 1;
                 }
