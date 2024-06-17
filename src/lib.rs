@@ -209,6 +209,8 @@ fn ensure_cache_populated() {
                         total_entry_count += MAX_ENTRIES_PER_CALENDAR;
                     }
 
+                    debug1!("added calendar {id} with total {entry_count} (truncated if > {MAX_ENTRIES_PER_CALENDAR}) entries");
+
                     calendar_count += 1;
                 }
             }
@@ -237,7 +239,7 @@ fn ensure_cache_populated() {
                         .unwrap()
                         .expect("calendar_entry cannot be null");
 
-                    debug2!(
+                    debug1!(
                         ">> got entry: {calendar_id} => {calendar_entry} ({})",
                         calendar_entry.to_pg_epoch_days()
                     );
@@ -259,7 +261,7 @@ fn ensure_cache_populated() {
                                 error!("cannot add entries to calendar_id = {prev_calendar_id}");
                             };
                             total_entries += prev_calendar.dates.len();
-                            debug2!(
+                            debug1!(
                                 ">> loaded {} entries into calendar_id = {}, entries cached = {total_entries}/{total_entry_count}",
                                 calendar_entries_vec.len(),
                                 prev_calendar_id
@@ -287,7 +289,7 @@ fn ensure_cache_populated() {
                         error!("cannot add entries to calendar_id = {prev_calendar_id}");
                     };
                     total_entries += prev_calendar.dates.len();
-                    debug2!(
+                    debug1!(
                         ">> loaded {} entries into calendar_id = {}, entries cached = {total_entries}/{total_entry_count} >> load complete",
                         calendar_entries_vec.len(),
                         prev_calendar_id
@@ -307,7 +309,7 @@ fn ensure_cache_populated() {
     if total_entries != total_entry_count {
         warning!("entries truncated, {total_entries} loaded of {total_entry_count}")
     }
-    debug2!("{total_entries} entries loaded");
+    debug1!("{total_entries} entries loaded");
     // Page Size init
     {
         CALENDAR_ID_MAP
@@ -341,7 +343,7 @@ fn ensure_cache_populated() {
                     }
                 }
 
-                debug2!("page_map created: calendar_id = {calendar_id}, page_size = {page_size_tmp}, page_map.len() = {}", page_map.len());
+                debug1!("page_map created: calendar_id = {calendar_id}, page_size = {page_size_tmp}, page_map.len() = {}", page_map.len());
 
                 calendar.first_page_offset = first_page_offset;
                 calendar.page_size = page_size_tmp;
