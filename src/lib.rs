@@ -20,22 +20,17 @@ AND (table_name = 'calendar' OR table_name = 'calendar_date');"#;
 
 const DEF_Q2_GET_CALENDAR_IDS: &CStr = cr#"SELECT MIN(c.id), MAX(c.id) FROM plan.calendar c"#;
 
-const DEF_Q3_GET_CAL_ENTRY_COUNT: &CStr = cr#"SELECT cd.calendar_id, COUNT(*),
-(SELECT LOWER(ct.xuid) FROM plan.calendar ct WHERE ct.id = cd.calendar_id) xuid
-FROM plan.calendar_date cd
-GROUP BY cd.calendar_id
-ORDER BY cd.calendar_id ASC;"#;
+// const DEF_Q3_GET_CAL_ENTRY_COUNT: &CStr = cr#"SELECT cd.calendar_id, COUNT(*),
+// (SELECT LOWER(ct.xuid) FROM plan.calendar ct WHERE ct.id = cd.calendar_id) xuid
+// FROM plan.calendar_date cd
+// GROUP BY cd.calendar_id
+// ORDER BY cd.calendar_id ASC;"#;
 
-// const DEF_Q3_GET_CAL_ENTRY_COUNT: &CStr = cr#"SELECT c.id AS calendar_id,
-//        COALESCE(cd.count, 0) AS count,
-//        LOWER(c.xuid) AS xuid
-// FROM plan.calendar c
-// LEFT JOIN (
-//     SELECT cd.calendar_id, COUNT(*) AS count
-//     FROM plan.calendar_date cd
-//     GROUP BY cd.calendar_id
-// ) cd ON c.id = cd.calendar_id
-// ORDER BY c.id ASC;"#;
+const DEF_Q3_GET_CAL_ENTRY_COUNT: &CStr = cr#"SELECT c.id AS calendar_id, COALESCE(cd.count, 0) AS count, LOWER(c.xuid) AS xuid
+FROM plan.calendar c
+LEFT JOIN (SELECT cd.calendar_id, COUNT(*) AS count FROM plan.calendar_date cd GROUP BY cd.calendar_id) cd
+ON c.id = cd.calendar_id
+ORDER BY c.id ASC;"#;
 
 // const DEF_Q4_GET_ENTRIES: &CStr = cr#"SELECT cd.calendar_id, cd."date"
 // FROM plan.calendar_date cd
