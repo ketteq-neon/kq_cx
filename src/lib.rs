@@ -26,11 +26,23 @@ const DEF_Q2_GET_CALENDAR_IDS: &CStr = cr#"SELECT MIN(c.id), MAX(c.id) FROM plan
 // GROUP BY cd.calendar_id
 // ORDER BY cd.calendar_id ASC;"#;
 
-const DEF_Q3_GET_CAL_ENTRY_COUNT: &CStr = cr#"SELECT c.id AS calendar_id, COALESCE(cd.count, 0) AS count, LOWER(c.xuid) AS xuid
-FROM plan.calendar c
-LEFT JOIN (SELECT cd.calendar_id, COUNT(*) AS count FROM plan.calendar_date cd GROUP BY cd.calendar_id) cd
-ON c.id = cd.calendar_id
-ORDER BY c.id ASC;"#;
+const DEF_Q3_GET_CAL_ENTRY_COUNT: &CStr = cr#"SELECT
+    c.id AS calendar_id,
+    COALESCE(cd.count, 0) AS count,
+    LOWER(c.xuid) AS xuid
+FROM
+    plan.calendar c
+LEFT JOIN (
+    SELECT
+        cd.calendar_id,
+        COUNT(*) AS count
+    FROM
+        plan.calendar_date cd
+    GROUP BY
+        cd.calendar_id
+) cd ON c.id = cd.calendar_id
+ORDER BY
+    c.id ASC;"#;
 
 // const DEF_Q4_GET_ENTRIES: &CStr = cr#"SELECT cd.calendar_id, cd."date"
 // FROM plan.calendar_date cd
@@ -195,7 +207,7 @@ fn ensure_cache_populated() {
                             error!("cannot get entry_count")
                         });
                     let xuid = row[3]
-                        .value::<&'static str>()
+                        .value::<String>()
                         .unwrap_or_else(|err| {
                             error!("server interface error - {err}")
                         })
@@ -205,8 +217,8 @@ fn ensure_cache_populated() {
 
                     debug1!("adding calendar {calendar_id} ({xuid}) with total {entry_count} (truncated if > {MAX_ENTRIES_PER_CALENDAR}) entries");
 
-
-                    let name_string = CalendarXuid::from(xuid);
+                    let xuid_str : &str = &xuid;
+                    let name_string = CalendarXuid::from(xuid_str);
 
                     // Create a new calendar
                     calendar_id_map.insert(calendar_id, Calendar::default()).unwrap();
