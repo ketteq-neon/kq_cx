@@ -323,6 +323,10 @@ fn ensure_cache_populated() {
             .iter_mut()
             .by_ref()
             .for_each(|(calendar_id, calendar)| {
+                if calendar.dates.is_empty() {
+                    return;
+                }
+
                 let first_date = calendar.dates.first().expect("cannot get first_date");
                 let last_date = calendar.dates.last().expect("cannot get last_date");
                 let entry_count = calendar.dates.len() as i64;
