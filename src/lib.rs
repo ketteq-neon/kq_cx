@@ -175,31 +175,42 @@ fn ensure_cache_populated() {
     Spi::connect(|client| {
         let mut calendar_id_map = CALENDAR_ID_MAP.exclusive();
         let mut calendar_name_id_map = CALENDAR_XUID_ID_MAP.exclusive();
-        let select = client.select(&get_guc_string(&Q3_GET_CAL_ENTRY_COUNT), None, None);
-        match select {
+        match client.select(&get_guc_string(&Q3_GET_CAL_ENTRY_COUNT), None, None) {
             Ok(tuple_table) => {
                 for row in tuple_table {
-                    let id = row[1]
+                    let calendar_id = row[1]
                         .value::<i64>()
-                        .unwrap()
-                        .expect("calendar_id cannot be null");
+                        .unwrap_or_else(|err| {
+                            error!("server interface error - {err}")
+                        })
+                        .unwrap_or_else(|| {
+                            error!("cannot get calendar_id")
+                        });
                     let entry_count = row[2]
                         .value::<i64>()
-                        .unwrap()
-                        .expect("entry_count cannot be null");
+                        .unwrap_or_else(|err| {
+                            error!("server interface error - {err}")
+                        })
+                        .unwrap_or_else(|| {
+                            error!("cannot get entry_count")
+                        });
                     let xuid = row[3]
                         .value::<&'static str>()
-                        .unwrap()
-                        .expect("calendar_xuid cannot be null");
+                        .unwrap_or_else(|err| {
+                            error!("server interface error - {err}")
+                        })
+                        .unwrap_or_else(|| {
+                            error!("cannot get calendar xuid")
+                        });
 
-                    debug1!("adding calendar {id} ({xuid}) with total {entry_count} (truncated if > {MAX_ENTRIES_PER_CALENDAR}) entries");
+                    debug1!("adding calendar {calendar_id} ({xuid}) with total {entry_count} (truncated if > {MAX_ENTRIES_PER_CALENDAR}) entries");
 
 
                     let name_string = CalendarXuid::from(xuid);
 
                     // Create a new calendar
-                    calendar_id_map.insert(id, Calendar::default()).unwrap();
-                    calendar_name_id_map.insert(name_string, id).unwrap();
+                    calendar_id_map.insert(calendar_id, Calendar::default()).unwrap();
+                    calendar_name_id_map.insert(name_string, calendar_id).unwrap();
 
                     if entry_count < MAX_ENTRIES_PER_CALENDAR as i64 {
                         total_entry_count += entry_count as usize;
@@ -207,7 +218,7 @@ fn ensure_cache_populated() {
                         total_entry_count += MAX_ENTRIES_PER_CALENDAR;
                     }
 
-                    debug1!("added calendar {id} ({xuid}) with total {entry_count} (truncated if > {MAX_ENTRIES_PER_CALENDAR}) entries");
+                    debug1!("added calendar {calendar_id} ({xuid}) with total {entry_count} (truncated if > {MAX_ENTRIES_PER_CALENDAR}) entries");
 
                     calendar_count += 1;
                 }
@@ -230,12 +241,20 @@ fn ensure_cache_populated() {
                 for row in tuple_table {
                     let calendar_id = row[1]
                         .value::<i64>()
-                        .unwrap()
-                        .expect("calendar_id cannot be null");
+                        .unwrap_or_else(|err| {
+                            error!("server interface error - {err}")
+                        })
+                        .unwrap_or_else(|| {
+                            error!("cannot get calendar_id")
+                        });
                     let calendar_entry = row[2]
                         .value::<PgDate>()
-                        .unwrap()
-                        .expect("calendar_entry cannot be null");
+                        .unwrap_or_else(|err| {
+                            error!("server interface error - {err}")
+                        })
+                        .unwrap_or_else(||{
+                            error!("cannot get calendar_entry")
+                        });
 
                     debug1!(
                         ">> got entry: {calendar_id} => {calendar_entry} ({})",
