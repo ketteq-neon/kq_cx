@@ -161,7 +161,7 @@ fn get_guc_string(guc: &GucStrSetting) -> String {
     let value = String::from_utf8_lossy(guc.get().expect("cannot get GUC value.").to_bytes())
         .to_string()
         .replace('\n', " ");
-    // debug1!("Query: {value}");
+    debug1!("Query: {value}");
     value
 }
 
