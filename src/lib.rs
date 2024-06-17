@@ -161,7 +161,6 @@ fn ensure_cache_populated() {
     validate_compatible_db();
     // Load calendars (id, name and entry count)
     let mut calendar_count: usize = 0;
-    let mut total_entry_count: usize = 0;
     Spi::connect(|client| {
         let mut calendar_id_map = CALENDAR_ID_MAP.exclusive();
         let mut calendar_name_id_map = CALENDAR_XUID_ID_MAP.exclusive();
@@ -176,15 +175,15 @@ fn ensure_cache_populated() {
                         .unwrap_or_else(|| {
                             error!("cannot get calendar_id")
                         });
-                    let entry_count = row[2]
-                        .value::<i64>()
-                        .unwrap_or_else(|err| {
-                            error!("server interface error - {err}")
-                        })
-                        .unwrap_or_else(|| {
-                            error!("cannot get entry_count")
-                        });
-                    let xuid = row[3]
+                    // let entry_count = row[2]
+                    //     .value::<i64>()
+                    //     .unwrap_or_else(|err| {
+                    //         error!("server interface error - {err}")
+                    //     })
+                    //     .unwrap_or_else(|| {
+                    //         error!("cannot get entry_count")
+                    //     });
+                    let xuid = row[2]
                         .value::<String>()
                         .unwrap_or_else(|err| {
                             error!("server interface error - {err}")
@@ -193,7 +192,7 @@ fn ensure_cache_populated() {
                             error!("cannot get calendar xuid")
                         });
 
-                    debug1!("adding calendar {calendar_id} ({xuid}) with total {entry_count} (truncated if > {MAX_ENTRIES_PER_CALENDAR}) entries");
+                    // debug1!("adding calendar {calendar_id} ({xuid})");
 
                     let xuid_str : &str = &xuid;
                     let name_string = CalendarXuid::from(xuid_str);
@@ -202,13 +201,13 @@ fn ensure_cache_populated() {
                     calendar_id_map.insert(calendar_id, Calendar::default()).unwrap();
                     calendar_name_id_map.insert(name_string, calendar_id).unwrap();
 
-                    if entry_count < MAX_ENTRIES_PER_CALENDAR as i64 {
-                        total_entry_count += entry_count as usize;
-                    } else {
-                        total_entry_count += MAX_ENTRIES_PER_CALENDAR;
-                    }
+                    // if entry_count < MAX_ENTRIES_PER_CALENDAR as i64 {
+                    //     total_entry_count += entry_count as usize;
+                    // } else {
+                    //     total_entry_count += MAX_ENTRIES_PER_CALENDAR;
+                    // }
 
-                    debug1!("added calendar {calendar_id} ({xuid}) with total {entry_count} (truncated if > {MAX_ENTRIES_PER_CALENDAR}) entries");
+                    // debug1!("added calendar {calendar_id} ({xuid})");
 
                     calendar_count += 1;
                 }
@@ -269,7 +268,7 @@ fn ensure_cache_populated() {
                             };
                             total_entries += prev_calendar.dates.len();
                             debug1!(
-                                ">> loaded {} entries into calendar_id = {}, entries cached = {total_entries}/{total_entry_count}",
+                                ">> loaded {} entries into calendar_id = {}, entries cached = {total_entries}",
                                 calendar_entries_vec.len(),
                                 prev_calendar_id
                             );
@@ -297,7 +296,7 @@ fn ensure_cache_populated() {
                     };
                     total_entries += prev_calendar.dates.len();
                     debug1!(
-                        ">> loaded {} entries into calendar_id = {}, entries cached = {total_entries}/{total_entry_count} >> load complete",
+                        ">> loaded {} entries into calendar_id = {}, entries cached = {total_entries} >> load complete",
                         calendar_entries_vec.len(),
                         prev_calendar_id
                     );
@@ -313,9 +312,9 @@ fn ensure_cache_populated() {
             }
         }
     });
-    if total_entries != total_entry_count {
-        warning!("entries truncated, {total_entries} loaded of {total_entry_count}")
-    }
+    // if total_entries != total_entry_count {
+    //     warning!("entries truncated, {total_entries} loaded of {total_entry_count}")
+    // }
     debug1!("{total_entries} entries loaded");
     // Page Size init
     {
@@ -360,12 +359,12 @@ fn ensure_cache_populated() {
     }
 
     *CALENDAR_CONTROL.exclusive() = CalendarControl {
-        entry_count: total_entry_count,
+        entry_count: total_entries,
         calendar_count,
         filled: true,
     };
 
-    info!("cache ready. calendars = {calendar_count}, entries = {total_entry_count}")
+    info!("cache ready. calendars = {calendar_count}, entries = {total_entries}")
 }
 
 /// Checks if the schema is compatible with the extension.
