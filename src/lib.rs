@@ -146,7 +146,7 @@ fn get_guc_string(guc: &GucStrSetting) -> String {
     let value = String::from_utf8_lossy(guc.get().expect("cannot get GUC value.").to_bytes())
         .to_string()
         .replace('\n', " ");
-    debug1!("Query: {value}");
+    debug2!("Query: {value}");
     value
 }
 
@@ -245,7 +245,7 @@ fn ensure_cache_populated() {
                             error!("cannot get calendar_entry")
                         });
 
-                    debug1!(
+                    debug2!(
                         ">> got entry: {calendar_id} => {calendar_entry} ({})",
                         calendar_entry.to_pg_epoch_days()
                     );
@@ -267,7 +267,7 @@ fn ensure_cache_populated() {
                                 error!("cannot add entries to calendar_id = {prev_calendar_id}");
                             };
                             total_entries += prev_calendar.dates.len();
-                            debug1!(
+                            debug2!(
                                 ">> loaded {} entries into calendar_id = {}, entries cached = {total_entries}",
                                 calendar_entries_vec.len(),
                                 prev_calendar_id
@@ -295,7 +295,7 @@ fn ensure_cache_populated() {
                         error!("cannot add entries to calendar_id = {prev_calendar_id}");
                     };
                     total_entries += prev_calendar.dates.len();
-                    debug1!(
+                    debug2!(
                         ">> loaded {} entries into calendar_id = {}, entries cached = {total_entries} >> load complete",
                         calendar_entries_vec.len(),
                         prev_calendar_id
@@ -315,7 +315,7 @@ fn ensure_cache_populated() {
     // if total_entries != total_entry_count {
     //     warning!("entries truncated, {total_entries} loaded of {total_entry_count}")
     // }
-    debug1!("{total_entries} entries loaded");
+    debug2!("{total_entries} entries loaded");
     // Page Size init
     {
         CALENDAR_ID_MAP
@@ -353,7 +353,7 @@ fn ensure_cache_populated() {
                     }
                 }
 
-                debug1!("page_map created: calendar_id = {calendar_id}, page_size = {page_size_tmp}, page_map.len() = {}", page_map.len());
+                debug2!("page_map created: calendar_id = {calendar_id}, page_size = {page_size_tmp}, page_map.len() = {}", page_map.len());
 
                 calendar.first_page_offset = first_page_offset;
                 calendar.page_size = page_size_tmp;
@@ -568,11 +568,11 @@ fn kq_cx_display_page_map() -> TableIterator<'static, (name!(calendar, String), 
 
 #[pg_extern(parallel_safe)]
 fn kq_cx_invalidate_cache() -> &'static str {
-    debug1!("Waiting for lock...");
+    debug2!("Waiting for lock...");
     CALENDAR_XUID_ID_MAP.exclusive().clear();
-    debug1!("CALENDAR_XUID_ID_MAP cleared");
+    debug2!("CALENDAR_XUID_ID_MAP cleared");
     CALENDAR_ID_MAP.exclusive().clear();
-    debug1!("CALENDAR_ID_MAP cleared");
+    debug2!("CALENDAR_ID_MAP cleared");
     *CALENDAR_CONTROL.exclusive() = CalendarControl::default();
     debug1!("Cache invalidated");
     "Cache invalidated."
@@ -655,9 +655,9 @@ pub mod pg_test {
     pub fn postgresql_conf_options() -> Vec<&'static str> {
         vec![
             "shared_preload_libraries = 'kq_cx'",
-            "log_min_messages = debug1",
-            "log_min_error_statement = debug1",
-            "client_min_messages = debug1",
+            "log_min_messages = debug2",
+            "log_min_error_statement = debug2",
+            "client_min_messages = debug2",
         ]
     }
 }
