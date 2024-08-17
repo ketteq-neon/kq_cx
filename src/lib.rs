@@ -1,5 +1,8 @@
 mod math;
 
+use pgrx::bgworkers::BackgroundWorker;
+use pgrx::bgworkers::BackgroundWorkerBuilder;
+use pgrx::bgworkers::SignalWakeFlags;
 use pgrx::lwlock::PgLwLock;
 use pgrx::prelude::*;
 use pgrx::shmem::*;
@@ -9,9 +12,10 @@ use std::ffi::CStr;
 
 pgrx::pg_module_magic!();
 
-const MAX_CALENDARS: usize = 128;
+const MAX_CALENDARS: usize = 64;
 const MAX_ENTRIES_PER_CALENDAR: usize = 5 * 1024;
-const CALENDAR_XUID_MAX_LEN: usize = 64;
+const MAX_PAGE_MAP_PER_CALENDAR: usize = 512;
+const CALENDAR_XUID_MAX_LEN: usize = 32;
 
 const DEF_Q1_VALIDATION_QUERY: &CStr = cr#"SELECT COUNT(table_name) = 2
 FROM information_schema.tables
@@ -46,7 +50,7 @@ ORDER BY calendar_id ASC, "date" ASC;"#;
 
 type GucStrSetting = GucSetting<Option<&'static CStr>>;
 type EntriesVec = heapless::Vec<i32, MAX_ENTRIES_PER_CALENDAR>;
-type PageMapVec = heapless::Vec<usize, MAX_ENTRIES_PER_CALENDAR>;
+type PageMapVec = heapless::Vec<usize, MAX_PAGE_MAP_PER_CALENDAR>;
 type CalendarIdMap = heapless::FnvIndexMap<i64, Calendar, MAX_CALENDARS>;
 type CalendarXuidIdMap = heapless::FnvIndexMap<CalendarXuid, i64, MAX_CALENDARS>;
 type CalendarXuid = heapless::String<CALENDAR_XUID_MAX_LEN>;
@@ -94,18 +98,39 @@ static CALENDAR_XUID_ID_MAP: PgLwLock<CalendarXuidIdMap> = PgLwLock::new();
 static CALENDAR_CONTROL: PgLwLock<CalendarControl> = PgLwLock::new();
 
 #[pg_guard]
-pub extern "C" fn _PG_init() {
+pub extern "C" fn init_shmem_hook() {
     pg_shmem_init!(CALENDAR_ID_MAP);
     pg_shmem_init!(CALENDAR_XUID_ID_MAP);
     pg_shmem_init!(CALENDAR_CONTROL);
-    init_gucs();
-    ensure_cache_populated();
+}
+
+#[pg_guard]
+pub extern "C" fn _PG_init() {
+    init_shmem_hook();
+    init_gucs();    
+    BackgroundWorkerBuilder::new("Calendar Extension Startup Loader")
+        .set_function("bgworker_populate_cache")
+        .set_library("kq_cx")
+        .enable_shmem_access(Some(init_shmem_hook))
+        .enable_spi_access()
+        .load();
     info!("ketteQ In-Memory Calendar Cache Extension Loaded (kq_cx)");    
 }
 
 #[pg_guard]
 pub extern "C" fn _PG_fini() {
     info!("Unloaded ketteQ In-Memory Calendar Cache Extension (kq_cx)");
+}
+
+#[pg_guard]
+#[no_mangle]
+pub extern "C" fn bgworker_populate_cache() {
+    debug1!("starting load bgworker");
+
+    BackgroundWorker::attach_signal_handlers(SignalWakeFlags::SIGHUP | SignalWakeFlags::SIGTERM);
+    BackgroundWorker::connect_worker_to_spi(Some("postgres"), None);
+
+    debug1!("bgworker complete");    
 }
 
 fn init_gucs() {
@@ -541,7 +566,7 @@ fn kq_cx_invalidate_cache() -> &'static str {
 
 #[pg_extern(parallel_safe)]
 unsafe fn kq_cx_add_days(input_date: PgDate, interval: i32, calendar_id: i64) -> Option<PgDate> {
-    // ensure_cache_populated();
+    ensure_cache_populated();
     match CALENDAR_ID_MAP.share().get(&calendar_id) {
         None => {
             warning!("calendar_id = {calendar_id} not found in cache");
@@ -563,7 +588,7 @@ unsafe fn kq_cx_add_days_xuid(
     interval: i32,
     calendar_xuid: &str,
 ) -> Option<PgDate> {
-    // ensure_cache_populated();
+    ensure_cache_populated();
     let calendar_xuid = calendar_xuid.to_lowercase();
     let calendar_xuid: &str = &calendar_xuid;
     let calendar_xuid: CalendarXuid = heapless::String::from(calendar_xuid);
@@ -599,9 +624,9 @@ mod tests {
 
     #[pg_test]
     fn test_hello_kq_fx_calendar() {
-        crate::kq_cx_cache_info();
-        crate::kq_cx_populate_cache();
-        crate::kq_cx_cache_info();
+        // crate::kq_cx_cache_info();
+        // crate::kq_cx_populate_cache();
+        // crate::kq_cx_cache_info();
     }
 }
 
