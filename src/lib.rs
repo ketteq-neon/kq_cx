@@ -11,7 +11,7 @@ pgrx::pg_module_magic!();
 
 const MAX_CALENDARS: usize = 128;
 const MAX_ENTRIES_PER_CALENDAR: usize = 5 * 1024;
-const CALENDAR_XUID_MAX_LEN: usize = 128;
+const CALENDAR_XUID_MAX_LEN: usize = 64;
 
 const DEF_Q1_VALIDATION_QUERY: &CStr = cr#"SELECT COUNT(table_name) = 2
 FROM information_schema.tables
@@ -99,7 +99,8 @@ pub extern "C" fn _PG_init() {
     pg_shmem_init!(CALENDAR_XUID_ID_MAP);
     pg_shmem_init!(CALENDAR_CONTROL);
     init_gucs();
-    info!("ketteQ In-Memory Calendar Cache Extension Loaded (kq_cx)");
+    ensure_cache_populated();
+    info!("ketteQ In-Memory Calendar Cache Extension Loaded (kq_cx)");    
 }
 
 #[pg_guard]
@@ -175,14 +176,7 @@ fn ensure_cache_populated() {
                         .unwrap_or_else(|| {
                             error!("cannot get calendar_id")
                         });
-                    // let entry_count = row[2]
-                    //     .value::<i64>()
-                    //     .unwrap_or_else(|err| {
-                    //         error!("server interface error - {err}")
-                    //     })
-                    //     .unwrap_or_else(|| {
-                    //         error!("cannot get entry_count")
-                    //     });
+
                     let xuid = row[2]
                         .value::<String>()
                         .unwrap_or_else(|err| {
@@ -200,14 +194,6 @@ fn ensure_cache_populated() {
                     // Create a new calendar
                     calendar_id_map.insert(calendar_id, Calendar::default()).unwrap();
                     calendar_name_id_map.insert(name_string, calendar_id).unwrap();
-
-                    // if entry_count < MAX_ENTRIES_PER_CALENDAR as i64 {
-                    //     total_entry_count += entry_count as usize;
-                    // } else {
-                    //     total_entry_count += MAX_ENTRIES_PER_CALENDAR;
-                    // }
-
-                    // debug1!("added calendar {calendar_id} ({xuid})");
 
                     calendar_count += 1;
                 }
@@ -462,29 +448,6 @@ fn kq_cx_info() -> TableIterator<'static, (name!(property, String), name!(value,
         "Max Entries per calendar".to_string(),
         format!("{}", MAX_ENTRIES_PER_CALENDAR),
     ));
-    // let mut current_memory_use = control.entry_count * control.calendar_count * mem::size_of::<i32>();
-    // // current_memory_use += control.calendar_count * mem::size_of::<i64>();
-    // CALENDAR_XUID_ID_MAP
-    //     .share()
-    //     .clone()
-    //     .iter()
-    //     .for_each(|(calendar_xuid, _)| {
-    //         current_memory_use += calendar_xuid.len();
-    //         current_memory_use += mem::size_of::<i64>();
-    //     });
-    // CALENDAR_ID_MAP
-    //     .share()
-    //     .clone()
-    //     .iter()
-    //     .for_each(|(_, calendar)| {
-    //         current_memory_use += calendar.page_map.len() * mem::size_of::<usize>();
-    //         current_memory_use += mem::size_of::<i64>();
-    //     });
-    // data.push(("Current Memory Usage".to_string(), format!("{} bytes", current_memory_use)));
-    // let mut max_memory_usage = MAX_CALENDARS * MAX_ENTRIES_PER_CALENDAR * mem::size_of::<i32>();
-    // max_memory_usage += MAX_CALENDARS * mem::size_of::<i64>();
-    // max_memory_usage += MAX_CALENDARS * CALENDAR_XUID_MAX_LEN;
-    // data.push(("Max Memory".to_string(), format!("{} bytes", max_memory_usage)));
     data.push(("Cache Available".to_string(), control.filled.to_string()));
     data.push((
         "Slice Cache Size (Calendar ID Count)".to_string(),
@@ -506,7 +469,6 @@ fn kq_cx_info() -> TableIterator<'static, (name!(property, String), name!(value,
         "[Q3] Get Calendar Entries".to_string(),
         get_guc_string(&Q4_GET_ENTRIES),
     ));
-
     get_calendars_info().iter().for_each(|calendar_info| {
         data.push((
             format!("Calendar id={} xuid={}", calendar_info.0, calendar_info.1),
@@ -522,7 +484,6 @@ fn kq_cx_info() -> TableIterator<'static, (name!(property, String), name!(value,
             format!("{}", calendar_info.4),
         ));
     });
-
     TableIterator::new(data)
 }
 
@@ -580,7 +541,7 @@ fn kq_cx_invalidate_cache() -> &'static str {
 
 #[pg_extern(parallel_safe)]
 unsafe fn kq_cx_add_days(input_date: PgDate, interval: i32, calendar_id: i64) -> Option<PgDate> {
-    ensure_cache_populated();
+    // ensure_cache_populated();
     match CALENDAR_ID_MAP.share().get(&calendar_id) {
         None => {
             warning!("calendar_id = {calendar_id} not found in cache");
@@ -602,7 +563,7 @@ unsafe fn kq_cx_add_days_xuid(
     interval: i32,
     calendar_xuid: &str,
 ) -> Option<PgDate> {
-    ensure_cache_populated();
+    // ensure_cache_populated();
     let calendar_xuid = calendar_xuid.to_lowercase();
     let calendar_xuid: &str = &calendar_xuid;
     let calendar_xuid: CalendarXuid = heapless::String::from(calendar_xuid);
