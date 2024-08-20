@@ -339,7 +339,7 @@ fn ensure_cache_populated() {
         filled: true,
     };
 
-    info!("cache ready. calendars = {calendar_count}, entries = {total_entries}")
+    debug2!("cache ready. calendars = {calendar_count}, entries = {total_entries}")
 }
 
 /// Checks if the schema is compatible with the extension.
@@ -520,7 +520,7 @@ fn kq_cx_invalidate_cache() -> &'static str {
     CALENDAR_ID_MAP.exclusive().clear();
     debug2!("CALENDAR_ID_MAP cleared");
     *CALENDAR_CONTROL.exclusive() = CalendarControl::default();
-    debug1!("Cache invalidated");
+    debug2!("Cache invalidated");
     "Cache invalidated."
 }
 
