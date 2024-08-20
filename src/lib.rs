@@ -22,7 +22,7 @@ AND (table_name = 'calendar' OR table_name = 'calendar_date');"#;
 const DEF_Q2_GET_CALENDAR_IDS: &CStr = cr#"SELECT MIN(c.id), MAX(c.id) FROM plan.calendar c"#;
 
 const DEF_Q3_GET_CAL_ENTRY_COUNT: &CStr =
-    cr#"SELECT id, lower(xuid) FROM plan.calendar c ORDER BY id ASC;"#;
+    cr#"SELECT id, xuid FROM plan.calendar c ORDER BY id ASC;"#;
 
 const DEF_Q4_GET_ENTRIES: &CStr = cr#"WITH ranked_dates AS (
     SELECT
@@ -98,6 +98,11 @@ pub extern "C" fn _PG_init() {
     pg_shmem_init!(CALENDAR_CONTROL);
     init_gucs();
     info!("ketteQ In-Memory Calendar Cache Extension Loaded (kq_cx)");
+}
+
+#[pg_guard]
+pub extern "C" fn _PG_fini() {
+    info!("Unloaded ketteQ In-Memory Calendar Cache Extension (kq_cx)");
 }
 
 fn init_gucs() {
@@ -544,8 +549,6 @@ unsafe fn kq_cx_add_days_xuid(
     calendar_xuid: &str,
 ) -> Option<PgDate> {
     ensure_cache_populated();
-    let calendar_xuid = calendar_xuid.to_lowercase();
-    let calendar_xuid: &str = &calendar_xuid;
     let calendar_xuid: CalendarXuid = heapless::String::from(calendar_xuid);
     match CALENDAR_XUID_ID_MAP.share().get(&calendar_xuid) {
         None => {
