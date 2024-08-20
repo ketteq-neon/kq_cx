@@ -535,7 +535,6 @@ unsafe fn kq_cx_add_days(input_date: PgDate, interval: i32, calendar_id: i64) ->
         Some(calendar) => {
             let result_date =
                 math::add_calendar_days(calendar, input_date.to_pg_epoch_days(), interval).0;
-            // debug1!("result from add_calendar_days: {}", result_date);
             let result_date = PgDate::from_pg_epoch_days(result_date);
             Some(result_date)
         }
@@ -556,14 +555,7 @@ unsafe fn kq_cx_add_days_xuid(
             None
         }
         Some(calendar_id) => {
-            let calendar = CALENDAR_ID_MAP
-                .share()
-                .get(calendar_id)
-                .expect("calendar is missing")
-                .clone();
-            let result_date =
-                math::add_calendar_days(&calendar, input_date.to_pg_epoch_days(), interval).0;
-            Some(PgDate::from_pg_epoch_days(result_date))
+            kq_cx_add_days(input_date, interval, *calendar_id)
         }
     }
 }
