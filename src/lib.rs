@@ -332,11 +332,11 @@ fn validate_compatible_db() {
     match spi_result {
         Ok(found_tables_opt) => match found_tables_opt {
             None => {
-                error!("The current database is not compatible with the ketteQ In-Memory Calendar Extension.")
+                error!("The current database is not compatible with the ketteQ Calendar Extension.")
             }
             Some(valid) => {
                 if !valid {
-                    error!("The current database is not compatible with the ketteQ In-Memory Calendar Extension.")
+                    error!("The current database is not compatible with the ketteQ Calendar Extension.")
                 }
             }
         },
