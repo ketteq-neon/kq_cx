@@ -10,7 +10,7 @@ use std::ffi::CStr;
 pgrx::pg_module_magic!();
 
 const MAX_CALENDARS: usize = 64;
-const MAX_ENTRIES_PER_CALENDAR: usize = 5 * 1024;
+const MAX_ENTRIES_PER_CALENDAR: usize = 8 * 1024;
 const MAX_PAGES_PER_CALENDAR: usize = 512;
 const CALENDAR_XUID_MAX_LEN: usize = 32;
 
@@ -24,21 +24,23 @@ const DEF_Q2_GET_CALENDAR_IDS: &CStr = cr#"SELECT MIN(c.id), MAX(c.id) FROM plan
 const DEF_Q3_GET_CAL_ENTRY_COUNT: &CStr =
     cr#"SELECT id, xuid FROM plan.calendar c ORDER BY id ASC;"#;
 
-const DEF_Q4_GET_ENTRIES: &CStr = cr#"WITH ranked_dates AS (
-    SELECT
-        cd.calendar_id,
-        cd."date",
-        ROW_NUMBER() OVER (PARTITION BY cd.calendar_id ORDER BY cd."date" ASC) as row_num
-    FROM plan.calendar_date cd
-    WHERE cd."date" >= (
-        SELECT date_trunc('day', dd."date") - interval '5 years'
-        FROM plan.data_date dd
-    )
-)
-SELECT calendar_id, "date"
-FROM ranked_dates
-WHERE row_num <= 5120
-ORDER BY calendar_id ASC, "date" ASC;"#;
+const DEF_Q4_GET_ENTRIES: &CStr = cr#"WITH
+	dates AS (
+	    SELECT
+	        cd.calendar_id,
+	        cd."date",
+	        ROW_NUMBER() OVER (PARTITION BY cd.calendar_id ORDER BY cd."date" DESC) as row_num
+	    FROM
+	    	plan.calendar_date cd
+	)
+SELECT
+	calendar_id, "date"
+FROM
+	dates
+WHERE
+	row_num <= 8*1024
+ORDER BY
+	1, 2;"#;
 
 // Types
 
