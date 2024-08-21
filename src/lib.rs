@@ -475,8 +475,8 @@ fn kq_cx_info() -> TableIterator<'static, (name!(property, String), name!(value,
 }
 
 #[pg_extern(parallel_safe)]
-unsafe fn kq_cx_display_cache(
-) -> TableIterator<'static, (name!(calendar, String), name!(entry, PgDate))> {
+fn kq_cx_display_cache() -> TableIterator<'static, (name!(calendar, String), name!(entry, PgDate))>
+{
     let mut data: Vec<(String, PgDate)> = vec![];
     CALENDAR_ID_MAP
         .share()
@@ -485,10 +485,9 @@ unsafe fn kq_cx_display_cache(
             let calendar_name =
                 get_calendar_xuid_from_id(CALENDAR_XUID_ID_MAP.share(), calendar_id);
             calendar.dates.iter().for_each(|date| {
-                data.push((
-                    format!("{} ({})", calendar_id, calendar_name),
-                    PgDate::from_pg_epoch_days(*date),
-                ));
+                data.push((format!("{} ({})", calendar_id, calendar_name), unsafe {
+                    PgDate::from_pg_epoch_days(*date)
+                }));
             });
         });
     TableIterator::new(data)
@@ -527,7 +526,7 @@ fn kq_cx_invalidate_cache() -> &'static str {
 }
 
 #[pg_extern(parallel_safe)]
-unsafe fn kq_cx_add_days(input_date: PgDate, interval: i32, calendar_id: i64) -> Option<PgDate> {
+fn kq_cx_add_days(input_date: PgDate, interval: i32, calendar_id: i64) -> Option<PgDate> {
     ensure_cache_populated();
     match CALENDAR_ID_MAP.share().get(&calendar_id) {
         None => {
@@ -537,7 +536,7 @@ unsafe fn kq_cx_add_days(input_date: PgDate, interval: i32, calendar_id: i64) ->
         Some(calendar) => {
             let result_date =
                 math::add_calendar_days(calendar, input_date.to_pg_epoch_days(), interval).0;
-            let result_date = PgDate::from_pg_epoch_days(result_date);
+            let result_date = unsafe { PgDate::from_pg_epoch_days(result_date) };
             Some(result_date)
         }
     }
@@ -556,9 +555,7 @@ unsafe fn kq_cx_add_days_xuid(
             warning!("calendar_xuid = {calendar_xuid} not found in cache");
             None
         }
-        Some(calendar_id) => {
-            kq_cx_add_days(input_date, interval, *calendar_id)
-        }
+        Some(calendar_id) => kq_cx_add_days(input_date, interval, *calendar_id),
     }
 }
 
@@ -574,11 +571,23 @@ mod tests {
 
     extension_sql_file!("../sql/test_data.sql");
 
+    fn create_date(year: i32, month: u8, day: u8) -> crate::PgDate {
+        crate::PgDate::new(year, month, day).expect("Failed to create date")
+    }
+
     #[pg_test]
-    fn test_hello_kq_fx_calendar() {
+    fn test_populate_cache() {
         crate::kq_cx_cache_info();
         crate::kq_cx_populate_cache();
         crate::kq_cx_cache_info();
+    }
+
+    #[pg_test]
+    fn test_add_calendar_days() {
+        assert_eq!(
+            crate::kq_cx_add_days(create_date(2024, 1, 1), 1, 1),
+            Some(create_date(2024, 2, 1))
+        )
     }
 }
 
