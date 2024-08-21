@@ -329,9 +329,9 @@ fn ensure_cache_populated() {
                 debug2!("page_map created: calendar_id = {calendar_id}, page_size = {page_size_tmp}, page_map.len() = {}", page_map.len());
 
                 calendar.first_page_offset = first_page_offset;
-                calendar.page_size = page_size_tmp;
-                // calendar.page_map.resize_default(page_map.len()).expect("cannot resize page map");
-                calendar.page_map.extend_from_slice(page_map.as_slice()).expect("cannot set page_map for calendar");
+                calendar.page_size = page_size_tmp;                
+                // calendar.page_map.extend(page_map);
+                calendar.page_map.extend_from_slice(page_map.as_slice()).expect(format!("cannot set page_map for calendar {calendar_id}").as_str());
             });
     }
 
