@@ -14,7 +14,8 @@ const MAX_ENTRIES_PER_CALENDAR: usize = 8 * 1024;
 const MAX_PAGES_PER_CALENDAR: usize = 512;
 const CALENDAR_XUID_MAX_LEN: usize = 32;
 
-const DEF_Q1_VALIDATION_QUERY: &CStr = cr#"SELECT
+const DEF_Q1_VALIDATION_QUERY: &CStr = cr#"
+    SELECT
         COUNT(table_name) = 2
     FROM
         information_schema.tables
@@ -28,7 +29,8 @@ const DEF_Q2_GET_CALENDAR_IDS: &CStr = cr#"SELECT MIN(c.id), MAX(c.id) FROM plan
 const DEF_Q3_GET_CAL_ENTRY_COUNT: &CStr =
     cr#"SELECT id, xuid FROM plan.calendar c ORDER BY id ASC;"#;
 
-const DEF_Q4_GET_ENTRIES: &CStr = cr#"WITH
+const DEF_Q4_GET_ENTRIES: &CStr = cr#"
+    WITH
         dd AS (
             SELECT
                 (date_trunc('year', date) - INTERVAL '10 Years')::date AS min_date,
