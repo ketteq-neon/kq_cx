@@ -312,24 +312,21 @@ fn ensure_cache_populated() {
                 }
                 let first_page_offset = first_date / page_size_tmp;
 
-                let mut prev_page_index = 0;
-                let mut page_map: Vec<usize> = vec![0];
+                calendar.first_page_offset = first_page_offset;
+                calendar.page_size = page_size_tmp;
 
                 // Create page map
+                let mut prev_page_index = 0;
                 for calendar_date_index in 0..calendar.dates.len() {
                     let date = calendar.dates.get(calendar_date_index).expect("cannot get date from cache");
                     let page_index = (date / page_size_tmp) - first_page_offset;
                     while prev_page_index < page_index {
                         prev_page_index += 1;
-                        page_map.insert(prev_page_index as usize, calendar_date_index);
+                        calendar.page_map.insert(prev_page_index as usize, calendar_date_index);
                     }
                 }
 
                 debug2!("page_map created: calendar_id = {calendar_id}, page_size = {page_size_tmp}, page_map.len() = {}", page_map.len());
-
-                calendar.first_page_offset = first_page_offset;
-                calendar.page_size = page_size_tmp;                
-                calendar.page_map.extend_from_slice(page_map.as_slice()).expect(format!("cannot set page_map for calendar {calendar_id}, page_map_len: {}", page_map.len()).as_str());
             });
     }
 
