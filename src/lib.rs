@@ -14,38 +14,36 @@ const MAX_ENTRIES_PER_CALENDAR: usize = 8 * 1024;
 const MAX_PAGES_PER_CALENDAR: usize = 512;
 const CALENDAR_XUID_MAX_LEN: usize = 32;
 
-const DEF_Q1_VALIDATION_QUERY: &CStr = cr#"
-    SELECT
+const DEF_Q1_VALIDATION_QUERY: &CStr = cr#"SELECT
         COUNT(table_name) = 2
     FROM
         information_schema.tables
     WHERE
         table_schema = 'plan' AND
         (table_name = 'calendar' OR table_name = 'calendar_date')
-    ;
-"#;
+    ;"#;
 
 const DEF_Q2_GET_CALENDAR_IDS: &CStr = cr#"SELECT MIN(c.id), MAX(c.id) FROM plan.calendar c"#;
 
 const DEF_Q3_GET_CAL_ENTRY_COUNT: &CStr = cr#"SELECT id, xuid FROM plan.calendar c ORDER BY id ASC;"#;
 
 const DEF_Q4_GET_ENTRIES: &CStr = cr#"WITH
-	dates AS (
-	    SELECT
-	        cd.calendar_id,
-	        cd."date",
-	        ROW_NUMBER() OVER (PARTITION BY cd.calendar_id ORDER BY cd."date" DESC) as row_num
-	    FROM
-	    	plan.calendar_date cd
-	)
-SELECT
-	calendar_id, "date"
-FROM
-	dates
-WHERE
-	row_num <= 8*1024
-ORDER BY
-	1, 2;"#;
+        dd AS (
+            SELECT
+                (date_trunc('year', date) - INTERVAL '10 Years')::date AS min_date,
+                (date_trunc('year', date) + INTERVAL '12 Years')::date AS max_date
+            FROM plan.data_date
+        )
+    SELECT
+        calendar_id, "date"
+    FROM
+        plan.calendar_date cd
+        CROSS JOIN dd
+    WHERE
+        cd.date >= dd.min_date AND cd.date < dd.max_date
+    ORDER BY
+        1, 2
+    ;"#;
 
 // Types
 
