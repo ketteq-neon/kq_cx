@@ -20,8 +20,6 @@ use pgrx::error;
 pub fn calculate_page_size(first_date: i32, last_date: i32, entry_count: i64) -> i32 {
     let avg_entries_per_week_calendar = (last_date - first_date) as f64 / 7.0;
 
-    // debug1!("avg_entries_per_week_calendar: {}", avg_entries_per_week_calendar);
-
     if entry_count as f64 > avg_entries_per_week_calendar {
         16 // weekly
     } else {
