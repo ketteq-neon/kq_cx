@@ -101,12 +101,13 @@ pub extern "C" fn _PG_init() {
     pg_shmem_init!(CALENDAR_XUID_ID_MAP);
     pg_shmem_init!(CALENDAR_CONTROL);
     init_gucs();
-    info!("ketteQ In-Memory Calendar Cache Extension Loaded (kq_cx)");
+
+    info!("ketteQ Calendar Extension (kq_cx) Loaded");
 }
 
 #[pg_guard]
 pub extern "C" fn _PG_fini() {
-    info!("Unloaded ketteQ In-Memory Calendar Cache Extension (kq_cx)");
+    info!("ketteQ Calendar Extension (kq_cx) Unloaded");
 }
 
 fn init_gucs() {
@@ -155,9 +156,7 @@ fn get_guc_string(guc: &GucStrSetting) -> String {
 /// The function `ensure_cache_populated` populates the cache with calendar data from the database, ensuring
 /// the cache is filled and ready for use.
 fn ensure_cache_populated() {
-    // debug1!("ensure_cache_populated()");
     if CALENDAR_CONTROL.share().clone().filled {
-        // debug1!("Cache already filled. Skipping loading from DB.");
         return;
     }
     validate_compatible_db();
@@ -178,8 +177,6 @@ fn ensure_cache_populated() {
                         .value::<String>()
                         .unwrap_or_else(|err| error!("server interface error - {err}"))
                         .unwrap_or_else(|| error!("cannot get calendar xuid"));
-
-                    // debug1!("adding calendar {calendar_id} ({xuid})");
 
                     let xuid_str: &str = &xuid;
                     let name_string = CalendarXuid::from(xuid_str);
@@ -287,9 +284,7 @@ fn ensure_cache_populated() {
             }
         }
     });
-    // if total_entries != total_entry_count {
-    //     warning!("entries truncated, {total_entries} loaded of {total_entry_count}")
-    // }
+
     debug2!("{total_entries} entries loaded");
     // Page Size init
     {
@@ -306,10 +301,7 @@ fn ensure_cache_populated() {
                 let last_date = calendar.dates.last().expect("cannot get last_date");
                 let entry_count = calendar.dates.len() as i64;
 
-                // debug1!("calculating page size (first_date: {}, last_date: {}, entry_count: {})", first_date, last_date, entry_count);
-
                 let page_size_tmp = math::calculate_page_size(*first_date, *last_date, entry_count);
-
                 if page_size_tmp == 0 {
                     error!("page size cannot be 0, cannot be calculated")
                 }
@@ -332,7 +324,6 @@ fn ensure_cache_populated() {
 
                 calendar.first_page_offset = first_page_offset;
                 calendar.page_size = page_size_tmp;                
-                // calendar.page_map.extend(page_map);
                 calendar.page_map.extend_from_slice(page_map.as_slice()).expect(format!("cannot set page_map for calendar {calendar_id}, page_map_len: {}", page_map.len()).as_str());
             });
     }
