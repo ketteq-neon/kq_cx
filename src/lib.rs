@@ -6,6 +6,7 @@ use pgrx::shmem::*;
 use pgrx::spi::SpiResult;
 use pgrx::{pg_shmem_init, GucContext, GucFlags, GucRegistry, GucSetting, PgLwLockShareGuard};
 use std::ffi::CStr;
+use std::time::Duration;
 
 pgrx::pg_module_magic!();
 
@@ -162,19 +163,19 @@ fn get_guc_string(guc: &GucStrSetting) -> String {
 /// The function `ensure_cache_populated` populates the cache with calendar data from the database, ensuring
 /// the cache is filled and ready for use.
 
-fn is_cache_filled() {
+fn is_cache_filled() -> bool {
     if CALENDAR_CONTROL.share().cache_filled {
         return true;
     }
 
-    if CURRENCY_CONTROL.share().cache_being_filled {
-        while CURRENCY_CONTROL.share().cache_being_filled {
+    if CALENDAR_CONTROL.share().cache_being_filled {
+        while CALENDAR_CONTROL.share().cache_being_filled {
             std::thread::sleep(Duration::from_millis(1));
         }
         return true;
     }
 
-    return false;
+    false
 }
 
 fn ensure_cache_populated() {
@@ -542,8 +543,8 @@ unsafe fn kq_cx_add_days_xuid(
 }
 
 #[pg_extern(parallel_safe)]
-fn kq_cx_populate_cache() {
-    ensure_cache_populated()
+fn kq_cx_populate_cache() -> &'static str {
+    ensure_cache_populated();
     "Cache populated."
 }
 

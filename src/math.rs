@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
 
-use crate::{Calendar, CALENDAR_CONTROL};
-use pgrx::error;
+use crate::{Calendar};
 
 // Original C Source
 // int32 calculate_page_size(int32 first_date, int32 last_date, int32 entry_count) {
@@ -154,10 +153,6 @@ pub fn add_calendar_days(
     input_date: i32,
     interval: i32,
 ) -> (i32, usize, usize) {
-    if !CALENDAR_CONTROL.share().filled {
-        error!("cannot calculate without cache")
-    }
-
     if calendar.dates.is_empty() {
         return (input_date + interval, 0, 0);
     }
