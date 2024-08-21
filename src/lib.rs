@@ -14,10 +14,16 @@ const MAX_ENTRIES_PER_CALENDAR: usize = 8 * 1024;
 const MAX_PAGES_PER_CALENDAR: usize = 512;
 const CALENDAR_XUID_MAX_LEN: usize = 32;
 
-const DEF_Q1_VALIDATION_QUERY: &CStr = cr#"SELECT COUNT(table_name) = 2
-FROM information_schema.tables
-WHERE table_schema = 'plan'
-AND (table_name = 'calendar' OR table_name = 'calendar_date');"#;
+const DEF_Q1_VALIDATION_QUERY: &CStr = cr#"
+SELECT
+    COUNT(table_name) = 2
+FROM
+    information_schema.tables
+WHERE
+    table_schema = 'plan' AND
+    (table_name = 'calendar' OR table_name = 'calendar_date')
+;
+"#;
 
 const DEF_Q2_GET_CALENDAR_IDS: &CStr = cr#"SELECT MIN(c.id), MAX(c.id) FROM plan.calendar c"#;
 
