@@ -88,7 +88,9 @@ unsafe impl PGRXSharedMemory for Calendar {}
 pub struct CalendarControl {
     calendar_count: usize,
     entry_count: usize,
-    filled: bool,
+
+    cache_filled: bool,
+    cache_being_filled: bool,
 }
 
 unsafe impl PGRXSharedMemory for CalendarControl {}
@@ -159,17 +161,43 @@ fn get_guc_string(guc: &GucStrSetting) -> String {
 
 /// The function `ensure_cache_populated` populates the cache with calendar data from the database, ensuring
 /// the cache is filled and ready for use.
+
+fn is_cache_filled() {
+    if CALENDAR_CONTROL.share().cache_filled {
+        return true;
+    }
+
+    if CURRENCY_CONTROL.share().cache_being_filled {
+        while CURRENCY_CONTROL.share().cache_being_filled {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        return true;
+    }
+
+    return false;
+}
+
 fn ensure_cache_populated() {
-    if CALENDAR_CONTROL.share().filled {
+    if is_cache_filled() {
         return;
     }
+
     validate_compatible_db();
+
     // Lock CALENDAR_ID_MAP
     let mut calendar_id_map = CALENDAR_ID_MAP.exclusive();
+
+    //someone else might have filled it already
+    if is_cache_filled() {
+        return;
+    }
+
+    CALENDAR_CONTROL.exclusive().cache_being_filled = true;
+
+    let mut calendar_name_id_map = CALENDAR_XUID_ID_MAP.exclusive();
     // Load calendars (id, name and entry count)
     let mut calendar_count: usize = 0;
     Spi::connect(|client| {
-        let mut calendar_name_id_map = CALENDAR_XUID_ID_MAP.exclusive();
         match client.select(&get_guc_string(&Q3_GET_CAL_ENTRY_COUNT), None, None) {
             Ok(tuple_table) => {
                 for row in tuple_table {
@@ -202,6 +230,7 @@ fn ensure_cache_populated() {
             }
         };
     });
+
     // Fill Cache
     let mut total_entries: usize = 0;
     Spi::connect(|client| {
@@ -290,7 +319,8 @@ fn ensure_cache_populated() {
     *CALENDAR_CONTROL.exclusive() = CalendarControl {
         entry_count: total_entries,
         calendar_count,
-        filled: true,
+        cache_filled: true,
+        cache_being_filled: false
     };
 
     debug2!("cache ready. calendars = {calendar_count}, entries = {total_entries}")
@@ -387,7 +417,7 @@ fn kq_cx_info() -> TableIterator<'static, (name!(property, String), name!(value,
         "Max Entries per calendar".to_string(),
         format!("{}", MAX_ENTRIES_PER_CALENDAR),
     ));
-    data.push(("Cache Available".to_string(), control.filled.to_string()));
+    data.push(("Cache Available".to_string(), control.cache_filled.to_string()));
     data.push((
         "Slice Cache Size (Calendar ID Count)".to_string(),
         control.calendar_count.to_string(),
@@ -468,12 +498,12 @@ fn kq_cx_display_page_map() -> TableIterator<'static, (name!(calendar, String), 
 #[pg_extern(parallel_safe)]
 fn kq_cx_invalidate_cache() -> &'static str {
     debug2!("Waiting for lock...");
+    let mut calendar_id_map = CALENDAR_ID_MAP.exclusive();
+
     CALENDAR_XUID_ID_MAP.exclusive().clear();
-    debug2!("CALENDAR_XUID_ID_MAP cleared");
-    CALENDAR_ID_MAP.exclusive().clear();
-    debug2!("CALENDAR_ID_MAP cleared");
     *CALENDAR_CONTROL.exclusive() = CalendarControl::default();
-    debug2!("Cache invalidated");
+
+    calendar_id_map.clear();
     "Cache invalidated."
 }
 
@@ -514,6 +544,7 @@ unsafe fn kq_cx_add_days_xuid(
 #[pg_extern(parallel_safe)]
 fn kq_cx_populate_cache() {
     ensure_cache_populated()
+    "Cache populated."
 }
 
 #[cfg(any(test, feature = "pg_test"))]
