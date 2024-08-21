@@ -315,7 +315,7 @@ fn ensure_cache_populated() {
                 calendar.page_size = page_size_tmp;
 
                 // Create page map
-                calendar.page_map.extend_from_slice(vec![0].as_slice()).unwrap();
+                calendar.page_map.push(0).unwrap();                
                 let mut prev_page_index = 0;
                 for calendar_date_index in 0..calendar.dates.len() {
                     let date: &i32 = calendar.dates.get(calendar_date_index).expect("cannot get date from cache");
