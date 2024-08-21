@@ -25,7 +25,8 @@ const DEF_Q1_VALIDATION_QUERY: &CStr = cr#"SELECT
 
 const DEF_Q2_GET_CALENDAR_IDS: &CStr = cr#"SELECT MIN(c.id), MAX(c.id) FROM plan.calendar c"#;
 
-const DEF_Q3_GET_CAL_ENTRY_COUNT: &CStr = cr#"SELECT id, xuid FROM plan.calendar c ORDER BY id ASC;"#;
+const DEF_Q3_GET_CAL_ENTRY_COUNT: &CStr =
+    cr#"SELECT id, xuid FROM plan.calendar c ORDER BY id ASC;"#;
 
 const DEF_Q4_GET_ENTRIES: &CStr = cr#"WITH
         dd AS (
@@ -157,7 +158,7 @@ fn get_guc_string(guc: &GucStrSetting) -> String {
 /// The function `ensure_cache_populated` populates the cache with calendar data from the database, ensuring
 /// the cache is filled and ready for use.
 fn ensure_cache_populated() {
-    if CALENDAR_CONTROL.share().clone().filled {
+    if CALENDAR_CONTROL.share().filled {
         return;
     }
     validate_compatible_db();
@@ -324,7 +325,7 @@ fn ensure_cache_populated() {
                 debug2!("page_map created: calendar_id = {calendar_id}, page_size = {page_size_tmp}, page_map.len() = {}", page_map.len());
 
                 calendar.first_page_offset = first_page_offset;
-                calendar.page_size = page_size_tmp;                
+                calendar.page_size = page_size_tmp;
                 calendar.page_map.extend_from_slice(page_map.as_slice()).expect(format!("cannot set page_map for calendar {calendar_id}, page_map_len: {}", page_map.len()).as_str());
             });
     }
