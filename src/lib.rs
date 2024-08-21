@@ -11,7 +11,7 @@ pgrx::pg_module_magic!();
 
 const MAX_CALENDARS: usize = 64;
 const MAX_ENTRIES_PER_CALENDAR: usize = 8 * 1024;
-const MAX_PAGES_PER_CALENDAR: usize = 512;
+const MAX_PAGES_PER_CALENDAR: usize = 1024;
 const CALENDAR_XUID_MAX_LEN: usize = 32;
 
 const DEF_Q1_VALIDATION_QUERY: &CStr = cr#"SELECT COUNT(table_name) = 2
@@ -331,7 +331,7 @@ fn ensure_cache_populated() {
                 calendar.first_page_offset = first_page_offset;
                 calendar.page_size = page_size_tmp;                
                 // calendar.page_map.extend(page_map);
-                calendar.page_map.extend_from_slice(page_map.as_slice()).expect(format!("cannot set page_map for calendar {calendar_id}").as_str());
+                calendar.page_map.extend_from_slice(page_map.as_slice()).expect(format!("cannot set page_map for calendar {calendar_id}, page_map_len: {}", page_map.len()).as_str());
             });
     }
 
