@@ -573,6 +573,19 @@ mod tests {
             Some(create_date(2024, 2, 1))
         )
     }
+
+    // #[pg_test]
+    // fn test_conv_pgdate_to_i32() {
+    //     assert_eq!(
+    //         -10957,
+    //         create_date(1970, 1, 1).to_pg_epoch_days()
+    //     );
+    //     assert_eq!(
+    //         72684,
+    //         create_date(2199, 1, 1).to_pg_epoch_days()
+    //     );
+    // }
+
 }
 
 /// This module is required by `cargo pgrx test` invocations.

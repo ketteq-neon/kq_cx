@@ -1,7 +1,5 @@
 use std::cmp::Ordering;
 
-use once_cell::sync::Lazy;
-
 use crate::Calendar;
 
 // Original C Source
@@ -151,8 +149,8 @@ pub fn get_closest_index_from_left(date: i32, calendar: &Calendar) -> i32 {
 //     }
 // }
 
-static DATE_PAST: Lazy<i32> = Lazy::new(|| crate::PgDate::new(1970, 01, 01).unwrap().to_pg_epoch_days()); //1970-01-01
-static DATE_FUTURE: Lazy<i32> = Lazy::new(|| crate::PgDate::new(2199, 01, 01).unwrap().to_pg_epoch_days()); //2199-01-01
+const DATE_PAST: i32 = -10957; //1970-01-01
+const DATE_FUTURE: i32 = 72684; //2199-01-01
 
 pub fn add_calendar_days(
     calendar: &Calendar,
@@ -167,12 +165,12 @@ pub fn add_calendar_days(
     let result_date_index = prev_date_index + interval;
     if prev_date_index < 0  || result_date_index < 0 {
         // Handle Negative OOB indices (When interval is negative)
-        return *DATE_PAST;
+        return DATE_PAST;
     }
 
     if result_date_index >= calendar.dates.len() as i32 {
         // Returns infinity+
-        return *DATE_FUTURE;
+        return DATE_FUTURE;
     }
 
     return *calendar.dates.get(result_date_index as usize).unwrap();
