@@ -6,6 +6,7 @@ use pgrx::shmem::*;
 use pgrx::spi::SpiResult;
 use pgrx::{pg_shmem_init, GucContext, GucFlags, GucRegistry, GucSetting, PgLwLockShareGuard};
 use std::ffi::CStr;
+use std::time::Duration;
 
 pgrx::pg_module_magic!();
 
@@ -88,7 +89,9 @@ unsafe impl PGRXSharedMemory for Calendar {}
 pub struct CalendarControl {
     calendar_count: usize,
     entry_count: usize,
-    filled: bool,
+
+    cache_filled: bool,
+    cache_being_filled: bool,
 }
 
 unsafe impl PGRXSharedMemory for CalendarControl {}
@@ -159,16 +162,43 @@ fn get_guc_string(guc: &GucStrSetting) -> String {
 
 /// The function `ensure_cache_populated` populates the cache with calendar data from the database, ensuring
 /// the cache is filled and ready for use.
+
+fn is_cache_filled() -> bool {
+    if CALENDAR_CONTROL.share().cache_filled {
+        return true;
+    }
+
+    if CALENDAR_CONTROL.share().cache_being_filled {
+        while CALENDAR_CONTROL.share().cache_being_filled {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        return true;
+    }
+
+    false
+}
+
 fn ensure_cache_populated() {
-    if CALENDAR_CONTROL.share().filled {
+    if is_cache_filled() {
         return;
     }
+
     validate_compatible_db();
+
+    // Lock CALENDAR_ID_MAP
+    let mut calendar_id_map = CALENDAR_ID_MAP.exclusive();
+
+    //someone else might have filled it already
+    if is_cache_filled() {
+        return;
+    }
+
+    CALENDAR_CONTROL.exclusive().cache_being_filled = true;
+
+    let mut calendar_name_id_map = CALENDAR_XUID_ID_MAP.exclusive();
     // Load calendars (id, name and entry count)
     let mut calendar_count: usize = 0;
     Spi::connect(|client| {
-        let mut calendar_id_map = CALENDAR_ID_MAP.exclusive();
-        let mut calendar_name_id_map = CALENDAR_XUID_ID_MAP.exclusive();
         match client.select(&get_guc_string(&Q3_GET_CAL_ENTRY_COUNT), None, None) {
             Ok(tuple_table) => {
                 for row in tuple_table {
@@ -201,16 +231,13 @@ fn ensure_cache_populated() {
             }
         };
     });
+
     // Fill Cache
     let mut total_entries: usize = 0;
     Spi::connect(|client| {
-        let mut calendar_id_map = CALENDAR_ID_MAP.exclusive();
         let select = client.select(&get_guc_string(&Q4_GET_ENTRIES), None, None);
         match select {
             Ok(tuple_table) => {
-                let mut prev_calendar_id = -1;
-                let mut calendar_entries_vec: Vec<i32> = vec![];
-
                 for row in tuple_table {
                     let calendar_id = row[1]
                         .value::<i64>()
@@ -226,61 +253,17 @@ fn ensure_cache_populated() {
                         calendar_entry.to_pg_epoch_days()
                     );
 
-                    if prev_calendar_id == -1 {
-                        // First loop
-                        prev_calendar_id = calendar_id;
-                    }
-
-                    // Calendar filled, next calendar
-                    if prev_calendar_id != calendar_id {
-                        // Update the Calendar
-                        if let Some(prev_calendar) = calendar_id_map.get_mut(&prev_calendar_id) {
-                            if Err(())
-                                == prev_calendar
-                                    .dates
-                                    .extend_from_slice(calendar_entries_vec.as_slice())
-                            {
-                                error!("cannot add entries to calendar_id = {prev_calendar_id}");
-                            };
-                            total_entries += prev_calendar.dates.len();
-                            debug2!(
-                                ">> loaded {} entries into calendar_id = {}, entries cached = {total_entries}",
-                                calendar_entries_vec.len(),
-                                prev_calendar_id
-                            );
-                        } else {
-                            error!(
-                                "cannot add entries: calendar_id = {} not initialized",
-                                prev_calendar_id
-                            )
+                    if let Some(calendar) = calendar_id_map.get_mut(&calendar_id) {
+                        if let Err(_) = calendar.dates.push(calendar_entry.to_pg_epoch_days()) {
+                            error!("cannot add more entries to calendar_id = {calendar_id}");
                         }
-                        prev_calendar_id = calendar_id;
-                        calendar_entries_vec.clear();
+                        total_entries += 1;
+                    } else {
+                        error!(
+                            "cannot add entries: calendar_id = {} not initialized",
+                            calendar_id
+                        )
                     }
-
-                    calendar_entries_vec.push(calendar_entry.to_pg_epoch_days());
-                }
-
-                // End reached, push last calendar entries
-                if let Some(prev_calendar) = calendar_id_map.get_mut(&prev_calendar_id) {
-                    if Err(())
-                        == prev_calendar
-                            .dates
-                            .extend_from_slice(calendar_entries_vec.as_slice())
-                    {
-                        error!("cannot add entries to calendar_id = {prev_calendar_id}");
-                    };
-                    total_entries += prev_calendar.dates.len();
-                    debug2!(
-                        ">> loaded {} entries into calendar_id = {}, entries cached = {total_entries} >> load complete",
-                        calendar_entries_vec.len(),
-                        prev_calendar_id
-                    );
-                } else {
-                    error!(
-                        "cannot add entries: calendar_id = {} not initialized",
-                        prev_calendar_id
-                    )
                 }
             }
             Err(spi_error) => {
@@ -290,50 +273,55 @@ fn ensure_cache_populated() {
     });
 
     debug2!("{total_entries} entries loaded");
+    
     // Page Size init
-    {
-        CALENDAR_ID_MAP
-            .exclusive()
-            .iter_mut()
-            .by_ref()
-            .for_each(|(calendar_id, calendar)| {
-                if calendar.dates.is_empty() {
-                    return;
+    calendar_id_map
+        .iter_mut()
+        .by_ref()
+        .for_each(|(calendar_id, calendar)| {
+            if calendar.dates.is_empty() {
+                return;
+            }
+
+            let first_date = calendar.dates.first().expect("cannot get first_date");
+            let last_date = calendar.dates.last().expect("cannot get last_date");
+            let entry_count = calendar.dates.len() as i64;
+
+            let page_size_tmp = math::calculate_page_size(*first_date, *last_date, entry_count);
+            if page_size_tmp == 0 {
+                error!("page size cannot be 0, cannot be calculated")
+            }
+            let first_page_offset = first_date / page_size_tmp;
+
+            calendar.first_page_offset = first_page_offset;
+            calendar.page_size = page_size_tmp;
+
+            // Create page map
+            calendar.page_map.push(0).unwrap();
+            let mut prev_page_index = 0;
+            for calendar_date_index in 0..calendar.dates.len() {
+                let date: &i32 = calendar
+                    .dates
+                    .get(calendar_date_index)
+                    .expect("cannot get date from cache");
+                let page_index = (date / page_size_tmp) - first_page_offset;
+                while prev_page_index < page_index {
+                    prev_page_index += 1;
+                    calendar
+                        .page_map
+                        .insert(prev_page_index as usize, calendar_date_index)
+                        .unwrap();
                 }
+            }
 
-                let first_date = calendar.dates.first().expect("cannot get first_date");
-                let last_date = calendar.dates.last().expect("cannot get last_date");
-                let entry_count = calendar.dates.len() as i64;
-
-                let page_size_tmp = math::calculate_page_size(*first_date, *last_date, entry_count);
-                if page_size_tmp == 0 {
-                    error!("page size cannot be 0, cannot be calculated")
-                }
-                let first_page_offset = first_date / page_size_tmp;
-
-                calendar.first_page_offset = first_page_offset;
-                calendar.page_size = page_size_tmp;
-
-                // Create page map
-                calendar.page_map.push(0).unwrap();                
-                let mut prev_page_index = 0;
-                for calendar_date_index in 0..calendar.dates.len() {
-                    let date: &i32 = calendar.dates.get(calendar_date_index).expect("cannot get date from cache");
-                    let page_index = (date / page_size_tmp) - first_page_offset;
-                    while prev_page_index < page_index {
-                        prev_page_index += 1;
-                        calendar.page_map.insert(prev_page_index as usize, calendar_date_index).unwrap();
-                    }
-                }
-
-                debug2!("page_map created: calendar_id = {calendar_id}, page_size = {page_size_tmp}");
-            });
-    }
+            debug2!("page_map created: calendar_id = {calendar_id}, page_size = {page_size_tmp}");
+        });
 
     *CALENDAR_CONTROL.exclusive() = CalendarControl {
         entry_count: total_entries,
         calendar_count,
-        filled: true,
+        cache_filled: true,
+        cache_being_filled: false
     };
 
     debug2!("cache ready. calendars = {calendar_count}, entries = {total_entries}")
@@ -345,11 +333,11 @@ fn validate_compatible_db() {
     match spi_result {
         Ok(found_tables_opt) => match found_tables_opt {
             None => {
-                error!("The current database is not compatible with the ketteQ In-Memory Calendar Extension.")
+                error!("The current database is not compatible with the ketteQ Calendar Extension.")
             }
             Some(valid) => {
                 if !valid {
-                    error!("The current database is not compatible with the ketteQ In-Memory Calendar Extension.")
+                    error!("The current database is not compatible with the ketteQ Calendar Extension.")
                 }
             }
         },
@@ -430,7 +418,7 @@ fn kq_cx_info() -> TableIterator<'static, (name!(property, String), name!(value,
         "Max Entries per calendar".to_string(),
         format!("{}", MAX_ENTRIES_PER_CALENDAR),
     ));
-    data.push(("Cache Available".to_string(), control.filled.to_string()));
+    data.push(("Cache Available".to_string(), control.cache_filled.to_string()));
     data.push((
         "Slice Cache Size (Calendar ID Count)".to_string(),
         control.calendar_count.to_string(),
@@ -511,12 +499,12 @@ fn kq_cx_display_page_map() -> TableIterator<'static, (name!(calendar, String), 
 #[pg_extern(parallel_safe)]
 fn kq_cx_invalidate_cache() -> &'static str {
     debug2!("Waiting for lock...");
+    let mut calendar_id_map = CALENDAR_ID_MAP.exclusive();
+
     CALENDAR_XUID_ID_MAP.exclusive().clear();
-    debug2!("CALENDAR_XUID_ID_MAP cleared");
-    CALENDAR_ID_MAP.exclusive().clear();
-    debug2!("CALENDAR_ID_MAP cleared");
     *CALENDAR_CONTROL.exclusive() = CalendarControl::default();
-    debug2!("Cache invalidated");
+
+    calendar_id_map.clear();
     "Cache invalidated."
 }
 
@@ -530,7 +518,7 @@ fn kq_cx_add_days(input_date: PgDate, interval: i32, calendar_id: i64) -> Option
         }
         Some(calendar) => {
             let result_date =
-                math::add_calendar_days(calendar, input_date.to_pg_epoch_days(), interval).0;
+                math::add_calendar_days(calendar, input_date.to_pg_epoch_days(), interval);
             let result_date = unsafe { PgDate::from_pg_epoch_days(result_date) };
             Some(result_date)
         }
@@ -555,8 +543,9 @@ unsafe fn kq_cx_add_days_xuid(
 }
 
 #[pg_extern(parallel_safe)]
-fn kq_cx_populate_cache() {
-    ensure_cache_populated()
+fn kq_cx_populate_cache() -> &'static str {
+    ensure_cache_populated();
+    "Cache populated."
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -584,6 +573,19 @@ mod tests {
             Some(create_date(2024, 2, 1))
         )
     }
+
+    // #[pg_test]
+    // fn test_conv_pgdate_to_i32() {
+    //     assert_eq!(
+    //         -10957,
+    //         create_date(1970, 1, 1).to_pg_epoch_days()
+    //     );
+    //     assert_eq!(
+    //         72684,
+    //         create_date(2199, 1, 1).to_pg_epoch_days()
+    //     );
+    // }
+
 }
 
 /// This module is required by `cargo pgrx test` invocations.
