@@ -148,50 +148,31 @@ pub fn get_closest_index_from_left(date: i32, calendar: &Calendar) -> i32 {
 //         return RET_SUCCESS;
 //     }
 // }
+
+
+static DATE_PAST: i32 = crate::PgDate::new(1970, 01, 01).to_epoch();   //1970-01-01
+static DATE_FUTURE: i32 = crate::PgDate::new(2199, 01, 01).to_epoch(); //2199-01-01
+
 pub fn add_calendar_days(
     calendar: &Calendar,
     input_date: i32,
     interval: i32,
-) -> (i32, usize, usize) {
+) -> i32 {
     if calendar.dates.is_empty() {
-        return (input_date + interval, 0, 0);
+        return input_date + interval;
     }
 
     let prev_date_index = get_closest_index_from_left(input_date, calendar);
-
-    // debug1!("closest index from left: {}", prev_date_index);
     let result_date_index = prev_date_index + interval;
-    // debug1!("closest result index: {}", result_date_index);
+    if prev_date_index < 0  || result_date_index < 0 {
+        // Handle Negative OOB indices (When interval is negative)
+        return DATE_PAST;
+    }
 
-    return if result_date_index >= 0 {
-        if prev_date_index < 0 {
-            // Handle Negative OOB indices (When interval is negative)
-            return (
-                *calendar.dates.first().unwrap(),
-                prev_date_index as usize,
-                result_date_index as usize,
-            );
-        }
-        if result_date_index >= calendar.dates.len() as i32 {
-            // Handle Positive OOB Indices (When interval is positive)
-            // Returns infinity+
-            return (
-                i32::MAX,
-                prev_date_index as usize,
-                result_date_index as usize,
-            );
-        }
-        (
-            *calendar.dates.get(result_date_index as usize).unwrap(),
-            prev_date_index as usize,
-            result_date_index as usize,
-        )
-    } else {
-        // First date of calendar
-        (
-            *calendar.dates.first().unwrap(),
-            prev_date_index as usize,
-            result_date_index as usize,
-        )
-    };
+    if result_date_index >= calendar.dates.len() as i32 {
+        // Returns infinity+
+        return DATE_FUTURE;
+    }
+
+    return *calendar.dates.get(result_date_index as usize).unwrap();
 }

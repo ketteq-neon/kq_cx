@@ -518,7 +518,7 @@ fn kq_cx_add_days(input_date: PgDate, interval: i32, calendar_id: i64) -> Option
         }
         Some(calendar) => {
             let result_date =
-                math::add_calendar_days(calendar, input_date.to_pg_epoch_days(), interval).0;
+                math::add_calendar_days(calendar, input_date.to_pg_epoch_days(), interval);
             let result_date = unsafe { PgDate::from_pg_epoch_days(result_date) };
             Some(result_date)
         }
