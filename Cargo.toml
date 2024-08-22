@@ -17,6 +17,7 @@ pg_test = []
 [dependencies]
 pgrx = { version = "=0.11.4", default-features = false }
 heapless = "=0.7.17"
+once_cell = "1.19"
 
 [dev-dependencies]
 pgrx-tests = "=0.11.4"
