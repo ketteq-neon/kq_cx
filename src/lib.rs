@@ -508,7 +508,7 @@ fn kq_cx_invalidate_cache() -> &'static str {
     "Cache invalidated."
 }
 
-#[pg_extern(parallel_safe)]
+#[pg_extern(parallel_safe, immutable)]
 fn kq_cx_add_days(input_date: PgDate, interval: i32, calendar_id: i64) -> Option<PgDate> {
     ensure_cache_populated();
     match CALENDAR_ID_MAP.share().get(&calendar_id) {
@@ -525,7 +525,7 @@ fn kq_cx_add_days(input_date: PgDate, interval: i32, calendar_id: i64) -> Option
     }
 }
 
-#[pg_extern(parallel_safe)]
+#[pg_extern(parallel_safe, immutable)]
 unsafe fn kq_cx_add_days_xuid(
     input_date: Date,
     interval: i32,
