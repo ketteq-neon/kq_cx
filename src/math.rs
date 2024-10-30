@@ -152,18 +152,14 @@ pub fn get_closest_index_from_left(date: i32, calendar: &Calendar) -> i32 {
 const DATE_PAST: i32 = -10957; //1970-01-01
 const DATE_FUTURE: i32 = 72684; //2199-01-01
 
-pub fn add_calendar_days(
-    calendar: &Calendar,
-    input_date: i32,
-    interval: i32,
-) -> i32 {
+pub fn add_calendar_days(calendar: &Calendar, input_date: i32, interval: i32) -> i32 {
     if calendar.dates.is_empty() {
         return input_date + interval;
     }
 
     let prev_date_index = get_closest_index_from_left(input_date, calendar);
     let result_date_index = prev_date_index + interval;
-    if prev_date_index < 0  || result_date_index < 0 {
+    if prev_date_index < 0 || result_date_index < 0 {
         // Handle Negative OOB indices (When interval is negative)
         return DATE_PAST;
     }
