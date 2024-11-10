@@ -20,11 +20,11 @@ pg17 = ["pgrx/pg17", "pgrx-tests/pg17" ]
 pg_test = []
 
 [dependencies]
-pgrx = { version = "0.12.7", default-features = false }
+pgrx = { version = "0.12.8", default-features = false }
 heapless = "0.8"
 
 [dev-dependencies]
-pgrx-tests = "0.12.7"
+pgrx-tests = "0.12.8"
 
 [profile.dev]
 panic = "unwind"
