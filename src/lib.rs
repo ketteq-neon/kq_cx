@@ -255,7 +255,11 @@ fn ensure_cache_populated() {
                     );
 
                     if let Some(calendar) = calendar_id_map.get_mut(&calendar_id) {
-                        if calendar.dates.push(calendar_entry.to_pg_epoch_days()).is_err() {
+                        if calendar
+                            .dates
+                            .push(calendar_entry.to_pg_epoch_days())
+                            .is_err()
+                        {
                             error!("cannot add more entries to calendar_id = {calendar_id}");
                         }
                         total_entries += 1;
