@@ -1,6 +1,6 @@
 [package]
 name = "kq_cx"
-version = "1.0.2"
+version = "1.0.1"
 edition = "2021"
 publish = false
 authors = [ 'Giancarlo A. Chiappe' ]
