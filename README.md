@@ -22,7 +22,7 @@ executing the `CREATE EXTENSION` query.
 
 The PGRX build system allows to target different PostgreSQL version automatically adjusting the output for them.
 
-Supported by this extension: PostgreSQL 15 (default) and 16.
+Supported by this extension: PostgreSQL 17 (default), 16 and 15.
 
 See the Build section to target a different PostgreSQL version, please note that if you use the automatic installer
 provided by the PGRX crate it will use the correct target PostgreSQL version.
