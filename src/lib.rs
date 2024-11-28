@@ -6,6 +6,7 @@ use pgrx::shmem::*;
 use pgrx::spi::SpiResult;
 use pgrx::{pg_shmem_init, GucContext, GucFlags, GucRegistry, GucSetting, PgLwLockShareGuard};
 use std::ffi::CStr;
+use std::str::FromStr;
 use std::time::Duration;
 
 pgrx::pg_module_magic!();
@@ -57,7 +58,7 @@ type PageMapVec = heapless::Vec<usize, MAX_PAGES_PER_CALENDAR>;
 type CalendarIdMap = heapless::FnvIndexMap<i64, Calendar, MAX_CALENDARS>;
 type CalendarXuidIdMap = heapless::FnvIndexMap<CalendarXuid, i64, MAX_CALENDARS>;
 type CalendarXuid = heapless::String<CALENDAR_XUID_MAX_LEN>;
-type PgDate = pgrx::Date;
+type PgDate = pgrx::datum::Date;
 type CalendarInfo = (
     i64,    // CalendarID
     String, // Calendar Name
@@ -213,7 +214,7 @@ fn ensure_cache_populated() {
                         .unwrap_or_else(|| error!("cannot get calendar xuid"));
 
                     let xuid_str: &str = &xuid;
-                    let name_string = CalendarXuid::from(xuid_str);
+                    let name_string = CalendarXuid::from_str(xuid_str).unwrap();
 
                     // Create a new calendar
                     calendar_id_map
@@ -254,7 +255,11 @@ fn ensure_cache_populated() {
                     );
 
                     if let Some(calendar) = calendar_id_map.get_mut(&calendar_id) {
-                        if let Err(_) = calendar.dates.push(calendar_entry.to_pg_epoch_days()) {
+                        if calendar
+                            .dates
+                            .push(calendar_entry.to_pg_epoch_days())
+                            .is_err()
+                        {
                             error!("cannot add more entries to calendar_id = {calendar_id}");
                         }
                         total_entries += 1;
@@ -273,7 +278,7 @@ fn ensure_cache_populated() {
     });
 
     debug2!("{total_entries} entries loaded");
-    
+
     // Page Size init
     calendar_id_map
         .iter_mut()
@@ -321,7 +326,7 @@ fn ensure_cache_populated() {
         entry_count: total_entries,
         calendar_count,
         cache_filled: true,
-        cache_being_filled: false
+        cache_being_filled: false,
     };
 
     debug2!("cache ready. calendars = {calendar_count}, entries = {total_entries}")
@@ -400,9 +405,7 @@ fn kq_cx_info() -> TableIterator<'static, (name!(property, String), name!(value,
     ));
     data.push((
         "PostgreSQL SDK Build".to_string(),
-        std::str::from_utf8(pg_sys::PG_VERSION_STR)
-            .unwrap()
-            .to_string(),
+        pg_sys::PG_VERSION_STR.to_str().unwrap().to_owned(),
     ));
     data.push((
         "Extension Version".to_string(),
@@ -418,7 +421,10 @@ fn kq_cx_info() -> TableIterator<'static, (name!(property, String), name!(value,
         "Max Entries per calendar".to_string(),
         format!("{}", MAX_ENTRIES_PER_CALENDAR),
     ));
-    data.push(("Cache Available".to_string(), control.cache_filled.to_string()));
+    data.push((
+        "Cache Available".to_string(),
+        control.cache_filled.to_string(),
+    ));
     data.push((
         "Slice Cache Size (Calendar ID Count)".to_string(),
         control.calendar_count.to_string(),
@@ -526,13 +532,9 @@ fn kq_cx_add_days(input_date: PgDate, interval: i32, calendar_id: i64) -> Option
 }
 
 #[pg_extern(parallel_safe, immutable)]
-unsafe fn kq_cx_add_days_xuid(
-    input_date: Date,
-    interval: i32,
-    calendar_xuid: &str,
-) -> Option<PgDate> {
+fn kq_cx_add_days_xuid(input_date: Date, interval: i32, calendar_xuid: &str) -> Option<PgDate> {
     ensure_cache_populated();
-    let calendar_xuid: CalendarXuid = heapless::String::from(calendar_xuid);
+    let calendar_xuid: CalendarXuid = heapless::String::from_str(calendar_xuid).unwrap();
     match CALENDAR_XUID_ID_MAP.share().get(&calendar_xuid) {
         None => {
             warning!("calendar_xuid = {calendar_xuid} not found in cache");
@@ -585,7 +587,6 @@ mod tests {
     //         create_date(2199, 1, 1).to_pg_epoch_days()
     //     );
     // }
-
 }
 
 /// This module is required by `cargo pgrx test` invocations.
