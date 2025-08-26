@@ -2,10 +2,12 @@ mod math;
 
 use pgrx::lwlock::PgLwLock;
 use pgrx::prelude::*;
-use pgrx::shmem::*;
 use pgrx::spi::SpiResult;
-use pgrx::{pg_shmem_init, GucContext, GucFlags, GucRegistry, GucSetting, PgLwLockShareGuard};
-use std::ffi::CStr;
+use pgrx::{
+    pg_shmem_init, GucContext, GucFlags, GucRegistry, GucSetting, PGRXSharedMemory,
+    PgLwLockShareGuard,
+};
+use std::ffi::{CStr, CString};
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -52,11 +54,14 @@ const DEF_Q4_GET_ENTRIES: &CStr = cr#"
 
 // Types
 
-type GucStrSetting = GucSetting<Option<&'static CStr>>;
+type GucStrSetting = GucSetting<Option<CString>>;
 type EntriesVec = heapless::Vec<i32, MAX_ENTRIES_PER_CALENDAR>;
 type PageMapVec = heapless::Vec<usize, MAX_PAGES_PER_CALENDAR>;
-type CalendarIdMap = heapless::FnvIndexMap<i64, Calendar, MAX_CALENDARS>;
-type CalendarXuidIdMap = heapless::FnvIndexMap<CalendarXuid, i64, MAX_CALENDARS>;
+#[derive(Default)]
+struct CalendarIdMapWrapper(heapless::FnvIndexMap<i64, Calendar, MAX_CALENDARS>);
+
+#[derive(Default)]
+struct CalendarXuidIdMapWrapper(heapless::FnvIndexMap<CalendarXuid, i64, MAX_CALENDARS>);
 type CalendarXuid = heapless::String<CALENDAR_XUID_MAX_LEN>;
 type PgDate = pgrx::datum::Date;
 type CalendarInfo = (
@@ -66,6 +71,10 @@ type CalendarInfo = (
     i32,    // Calendar Page Size
     i64,
 ); // Calendar PageMap Entries
+
+// Implement the required trait for shared memory
+unsafe impl PGRXSharedMemory for CalendarIdMapWrapper {}
+unsafe impl PGRXSharedMemory for CalendarXuidIdMapWrapper {}
 
 // GUC Queries
 
@@ -99,12 +108,14 @@ unsafe impl PGRXSharedMemory for CalendarControl {}
 
 // Shared Objects
 
-static CALENDAR_ID_MAP: PgLwLock<CalendarIdMap> = PgLwLock::new();
-static CALENDAR_XUID_ID_MAP: PgLwLock<CalendarXuidIdMap> = PgLwLock::new();
-static CALENDAR_CONTROL: PgLwLock<CalendarControl> = PgLwLock::new();
+static CALENDAR_ID_MAP: PgLwLock<CalendarIdMapWrapper> =
+    unsafe { PgLwLock::new(c"CALENDAR_ID_MAP") };
+static CALENDAR_XUID_ID_MAP: PgLwLock<CalendarXuidIdMapWrapper> =
+    unsafe { PgLwLock::new(c"CALENDAR_XUID_ID_MAP") };
+static CALENDAR_CONTROL: PgLwLock<CalendarControl> = unsafe { PgLwLock::new(c"CALENDAR_CONTROL") };
 
 #[pg_guard]
-pub extern "C" fn _PG_init() {
+pub extern "C-unwind" fn _PG_init() {
     pg_shmem_init!(CALENDAR_ID_MAP);
     pg_shmem_init!(CALENDAR_XUID_ID_MAP);
     pg_shmem_init!(CALENDAR_CONTROL);
@@ -114,39 +125,39 @@ pub extern "C" fn _PG_init() {
 }
 
 #[pg_guard]
-pub extern "C" fn _PG_fini() {
+pub extern "C-unwind" fn _PG_fini() {
     info!("ketteQ Calendar Extension (kq_cx) Unloaded");
 }
 
 fn init_gucs() {
     GucRegistry::define_string_guc(
-        "kq.calendar.q_schema_validation",
-        "Query to validate the existence of the required schemas.",
-        "",
+        c"kq.calendar.q_schema_validation",
+        c"Query to validate the existence of the required schemas.",
+        c"",
         &Q1_VALIDATION_QUERY,
         GucContext::Suset,
         GucFlags::empty(),
     );
     GucRegistry::define_string_guc(
-        "kq.calendar.q1_get_calendar_min_max_id",
-        "Query to select the MIN and MAX calendars.",
-        "",
+        c"kq.calendar.q1_get_calendar_min_max_id",
+        c"Query to select the MIN and MAX calendars.",
+        c"",
         &Q2_GET_CALENDAR_IDS,
         GucContext::Suset,
         GucFlags::empty(),
     );
     GucRegistry::define_string_guc(
-        "kq.calendar.q2_get_calendars_entry_count",
-        "Query to select the entry count for each calendar.",
-        "",
+        c"kq.calendar.q2_get_calendars_entry_count",
+        c"Query to select the entry count for each calendar.",
+        c"",
         &Q3_GET_CAL_ENTRY_COUNT,
         GucContext::Suset,
         GucFlags::empty(),
     );
     GucRegistry::define_string_guc(
-        "kq.calendar.q3_get_calendar_entries",
-        "Query to actually get the currencies and store it in the shared memory cache.",
-        "",
+        c"kq.calendar.q3_get_calendar_entries",
+        c"Query to actually get the currencies and store it in the shared memory cache.",
+        c"",
         &Q4_GET_ENTRIES,
         GucContext::Suset,
         GucFlags::empty(),
@@ -200,7 +211,7 @@ fn ensure_cache_populated() {
     // Load calendars (id, name and entry count)
     let mut calendar_count: usize = 0;
     Spi::connect(|client| {
-        match client.select(&get_guc_string(&Q3_GET_CAL_ENTRY_COUNT), None, None) {
+        match client.select(&get_guc_string(&Q3_GET_CAL_ENTRY_COUNT), None, &[]) {
             Ok(tuple_table) => {
                 for row in tuple_table {
                     let calendar_id = row[1]
@@ -218,9 +229,11 @@ fn ensure_cache_populated() {
 
                     // Create a new calendar
                     calendar_id_map
+                        .0
                         .insert(calendar_id, Calendar::default())
                         .unwrap();
                     calendar_name_id_map
+                        .0
                         .insert(name_string, calendar_id)
                         .unwrap();
 
@@ -236,7 +249,7 @@ fn ensure_cache_populated() {
     // Fill Cache
     let mut total_entries: usize = 0;
     Spi::connect(|client| {
-        let select = client.select(&get_guc_string(&Q4_GET_ENTRIES), None, None);
+        let select = client.select(&get_guc_string(&Q4_GET_ENTRIES), None, &[]);
         match select {
             Ok(tuple_table) => {
                 for row in tuple_table {
@@ -254,7 +267,7 @@ fn ensure_cache_populated() {
                         calendar_entry.to_pg_epoch_days()
                     );
 
-                    if let Some(calendar) = calendar_id_map.get_mut(&calendar_id) {
+                    if let Some(calendar) = calendar_id_map.0.get_mut(&calendar_id) {
                         if calendar
                             .dates
                             .push(calendar_entry.to_pg_epoch_days())
@@ -281,6 +294,7 @@ fn ensure_cache_populated() {
 
     // Page Size init
     calendar_id_map
+        .0
         .iter_mut()
         .by_ref()
         .for_each(|(calendar_id, calendar)| {
@@ -353,10 +367,11 @@ fn validate_compatible_db() {
 }
 
 fn get_calendar_xuid_from_id(
-    shared_calendar_xuid_id_map: PgLwLockShareGuard<CalendarXuidIdMap>,
+    shared_calendar_xuid_id_map: PgLwLockShareGuard<CalendarXuidIdMapWrapper>,
     calendar_id: &i64,
 ) -> String {
     shared_calendar_xuid_id_map
+        .0
         .iter()
         .find(|&(_, map_calendar_id)| map_calendar_id == calendar_id)
         .map(|(m_calendar_xuid, _)| m_calendar_xuid.to_string())
@@ -366,6 +381,7 @@ fn get_calendar_xuid_from_id(
 fn get_calendars_info() -> Vec<CalendarInfo> {
     CALENDAR_ID_MAP
         .share()
+        .0
         .iter()
         .map(|(calendar_id, calendar)| {
             let calendar_xuid =
@@ -469,6 +485,7 @@ fn kq_cx_display_cache() -> TableIterator<'static, (name!(calendar, String), nam
     let mut data: Vec<(String, PgDate)> = vec![];
     CALENDAR_ID_MAP
         .share()
+        .0
         .iter()
         .for_each(|(calendar_id, calendar)| {
             let calendar_name =
@@ -488,6 +505,7 @@ fn kq_cx_display_page_map() -> TableIterator<'static, (name!(calendar, String), 
     let mut data: Vec<(String, i64)> = vec![];
     CALENDAR_ID_MAP
         .share()
+        .0
         .iter()
         .for_each(|(calendar_id, calendar)| {
             let calendar_name =
@@ -507,17 +525,17 @@ fn kq_cx_invalidate_cache() -> &'static str {
     debug2!("Waiting for lock...");
     let mut calendar_id_map = CALENDAR_ID_MAP.exclusive();
 
-    CALENDAR_XUID_ID_MAP.exclusive().clear();
+    CALENDAR_XUID_ID_MAP.exclusive().0.clear();
     *CALENDAR_CONTROL.exclusive() = CalendarControl::default();
 
-    calendar_id_map.clear();
+    calendar_id_map.0.clear();
     "Cache invalidated."
 }
 
 #[pg_extern(parallel_safe, immutable)]
 fn kq_cx_add_days(input_date: PgDate, interval: i32, calendar_id: i64) -> Option<PgDate> {
     ensure_cache_populated();
-    match CALENDAR_ID_MAP.share().get(&calendar_id) {
+    match CALENDAR_ID_MAP.share().0.get(&calendar_id) {
         None => {
             warning!("calendar_id = {calendar_id} not found in cache");
             None
@@ -535,7 +553,7 @@ fn kq_cx_add_days(input_date: PgDate, interval: i32, calendar_id: i64) -> Option
 fn kq_cx_add_days_xuid(input_date: Date, interval: i32, calendar_xuid: &str) -> Option<PgDate> {
     ensure_cache_populated();
     let calendar_xuid: CalendarXuid = heapless::String::from_str(calendar_xuid).unwrap();
-    match CALENDAR_XUID_ID_MAP.share().get(&calendar_xuid) {
+    match CALENDAR_XUID_ID_MAP.share().0.get(&calendar_xuid) {
         None => {
             warning!("calendar_xuid = {calendar_xuid} not found in cache");
             None
